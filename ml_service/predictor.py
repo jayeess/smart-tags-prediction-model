@@ -1,13 +1,14 @@
 """Main prediction orchestrator - combines model inference, data mapping, and sentiment."""
 
+import logging
 from dataclasses import dataclass, asdict
 from typing import Optional
 
 import numpy as np
 
-from .model_loader import load_keras_model, build_preprocessor
-from .data_mapper import RestaurantToHotelMapper
 from .sentiment import analyze_sentiment, SentimentResult
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -25,10 +26,36 @@ class GuestPrediction:
         return d
 
 
+def _heuristic_reliability(
+    booking_advance_days: int,
+    previous_cancellations: int,
+    previous_completions: int,
+    is_repeat_guest: bool,
+    estimated_spend_per_cover: float,
+) -> float:
+    """Rule-based fallback when the ANN model is unavailable."""
+    score = 0.65
+
+    if is_repeat_guest:
+        score += 0.10
+    if previous_completions >= 3:
+        score += 0.10
+    if previous_cancellations >= 2:
+        score -= 0.25
+    elif previous_cancellations == 1:
+        score -= 0.10
+    if booking_advance_days > 30:
+        score -= 0.05
+    if estimated_spend_per_cover >= 150:
+        score += 0.05
+
+    return round(max(0.0, min(1.0, score)), 3)
+
+
 class GuestBehaviorPredictor:
     """Orchestrates the full prediction pipeline:
     1. Map restaurant data -> hotel feature vector
-    2. Run ANN model inference
+    2. Run ANN model inference (or heuristic fallback)
     3. Analyze note sentiment
     4. Produce guest insight tags
     """
@@ -36,11 +63,20 @@ class GuestBehaviorPredictor:
     def __init__(self):
         self._model = None
         self._preprocessor = None
+        self._model_available = None  # None = not tried yet
 
     def _ensure_loaded(self):
-        if self._model is None:
+        if self._model_available is not None:
+            return
+        try:
+            from .model_loader import load_keras_model, build_preprocessor
             self._model = load_keras_model()
             self._preprocessor = build_preprocessor()
+            self._model_available = True
+            logger.info("ANN model loaded successfully")
+        except Exception as e:
+            logger.warning(f"ANN model unavailable, using heuristic fallback: {e}")
+            self._model_available = False
 
     def predict(
         self,
@@ -57,52 +93,43 @@ class GuestBehaviorPredictor:
         booking_channel: str = "Online",
         notes: str = "",
     ) -> GuestPrediction:
-        """Generate a full guest behavior prediction.
-
-        Args:
-            tenant_id: Restaurant identifier (enforces tenant isolation).
-            party_size: Total guests.
-            children: Number of children.
-            booking_advance_days: Days booked in advance.
-            special_needs_count: Number of special requests.
-            is_repeat_guest: Return visitor flag.
-            estimated_spend_per_cover: Expected spend per person.
-            reservation_date: Date of reservation (YYYY-MM-DD).
-            previous_cancellations: Past cancellation count.
-            previous_completions: Past completed visit count.
-            booking_channel: Booking source.
-            notes: Free-text notes for sentiment analysis.
-
-        Returns:
-            GuestPrediction with all insight fields.
-        """
+        """Generate a full guest behavior prediction."""
         self._ensure_loaded()
 
-        # Step 1: Map restaurant data to hotel feature vector
-        feature_df = RestaurantToHotelMapper.map_reservation(
-            party_size=party_size,
-            children=children,
-            booking_advance_days=booking_advance_days,
-            special_needs_count=special_needs_count,
-            is_repeat_guest=is_repeat_guest,
-            estimated_spend_per_cover=estimated_spend_per_cover,
-            reservation_date=reservation_date,
-            previous_cancellations=previous_cancellations,
-            previous_completions=previous_completions,
-            booking_channel=booking_channel,
-        )
+        if self._model_available:
+            from .data_mapper import RestaurantToHotelMapper
 
-        # Step 2: Preprocess and predict
-        X = self._preprocessor.transform(feature_df)
-        raw_prediction = self._model.predict(X, verbose=0)
-        reliability_score = float(raw_prediction[0][0])
+            feature_df = RestaurantToHotelMapper.map_reservation(
+                party_size=party_size,
+                children=children,
+                booking_advance_days=booking_advance_days,
+                special_needs_count=special_needs_count,
+                is_repeat_guest=is_repeat_guest,
+                estimated_spend_per_cover=estimated_spend_per_cover,
+                reservation_date=reservation_date,
+                previous_cancellations=previous_cancellations,
+                previous_completions=previous_completions,
+                booking_channel=booking_channel,
+            )
+
+            X = self._preprocessor.transform(feature_df)
+            raw_prediction = self._model.predict(X, verbose=0)
+            reliability_score = float(raw_prediction[0][0])
+            confidence = round(abs(reliability_score - 0.5) * 2, 3)
+        else:
+            reliability_score = _heuristic_reliability(
+                booking_advance_days=booking_advance_days,
+                previous_cancellations=previous_cancellations,
+                previous_completions=previous_completions,
+                is_repeat_guest=is_repeat_guest,
+                estimated_spend_per_cover=estimated_spend_per_cover,
+            )
+            confidence = 0.55  # lower confidence for heuristic
+
         no_show_risk = round(1.0 - reliability_score, 3)
         reliability_score = round(reliability_score, 3)
 
-        # Confidence: how far from 0.5 the prediction is
-        confidence = round(abs(reliability_score - 0.5) * 2, 3)
-
-        # Step 3: Determine risk label
+        # Risk label
         if no_show_risk >= 0.6:
             risk_label = "High Risk"
         elif no_show_risk >= 0.35:
@@ -110,7 +137,7 @@ class GuestBehaviorPredictor:
         else:
             risk_label = "Low Risk"
 
-        # Step 4: AI tag assignment
+        # AI tag
         if no_show_risk >= 0.6:
             ai_tag = "Likely No-Show"
         elif estimated_spend_per_cover >= 150:
@@ -120,7 +147,7 @@ class GuestBehaviorPredictor:
         else:
             ai_tag = "Low Risk"
 
-        # Step 5: Spend tier tag
+        # Spend tier
         if estimated_spend_per_cover >= 200:
             spend_tag = "Luxury"
         elif estimated_spend_per_cover >= 120:
@@ -130,7 +157,7 @@ class GuestBehaviorPredictor:
         else:
             spend_tag = "Budget"
 
-        # Step 6: Sentiment analysis on notes
+        # Sentiment
         sentiment = analyze_sentiment(notes)
 
         return GuestPrediction(

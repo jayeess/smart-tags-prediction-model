@@ -25,7 +25,10 @@ export async function predictGuestBehavior(
     headers: tenantHeaders(tenantId),
     body: JSON.stringify(reservation),
   });
-  if (!res.ok) throw new Error(`Prediction failed: ${res.statusText}`);
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(body || `Prediction failed: ${res.statusText}`);
+  }
   return res.json();
 }
 

@@ -265,51 +265,51 @@ async def health():
 @app.post("/api/v1/predict-guest-behavior", response_model=PredictionResponse)
 async def predict_guest_behavior(
     reservation: ReservationInput,
-    x_tenant_id: str = Header(..., alias="X-Tenant-ID"),
+    x_tenant_id: str = Header(default="default", alias="X-Tenant-ID"),
 ):
-    """Predict guest behavior for a single reservation.
+    """Predict guest behavior for a single reservation."""
+    try:
+        predictor = get_predictor()
 
-    Requires X-Tenant-ID header for tenant isolation.
-    """
-    predictor = get_predictor()
+        prediction = predictor.predict(
+            tenant_id=x_tenant_id,
+            party_size=reservation.party_size,
+            children=reservation.children,
+            booking_advance_days=reservation.booking_advance_days,
+            special_needs_count=reservation.special_needs_count,
+            is_repeat_guest=reservation.is_repeat_guest,
+            estimated_spend_per_cover=reservation.estimated_spend_per_cover,
+            reservation_date=reservation.reservation_date,
+            previous_cancellations=reservation.previous_cancellations,
+            previous_completions=reservation.previous_completions,
+            booking_channel=reservation.booking_channel,
+            notes=reservation.notes,
+        )
 
-    prediction = predictor.predict(
-        tenant_id=x_tenant_id,
-        party_size=reservation.party_size,
-        children=reservation.children,
-        booking_advance_days=reservation.booking_advance_days,
-        special_needs_count=reservation.special_needs_count,
-        is_repeat_guest=reservation.is_repeat_guest,
-        estimated_spend_per_cover=reservation.estimated_spend_per_cover,
-        reservation_date=reservation.reservation_date,
-        previous_cancellations=reservation.previous_cancellations,
-        previous_completions=reservation.previous_completions,
-        booking_channel=reservation.booking_channel,
-        notes=reservation.notes,
-    )
-
-    return PredictionResponse(
-        guest_name=reservation.guest_name,
-        reliability_score=prediction.reliability_score,
-        no_show_risk=prediction.no_show_risk,
-        risk_label=prediction.risk_label,
-        ai_tag=prediction.ai_tag,
-        spend_tag=prediction.spend_tag,
-        sentiment=SentimentResponse(
-            score=prediction.sentiment.score,
-            label=prediction.sentiment.label,
-            emoji=prediction.sentiment.emoji,
-        ),
-        confidence=prediction.confidence,
-        tenant_id=x_tenant_id,
-        predicted_at=datetime.utcnow().isoformat(),
-    )
+        return PredictionResponse(
+            guest_name=reservation.guest_name,
+            reliability_score=prediction.reliability_score,
+            no_show_risk=prediction.no_show_risk,
+            risk_label=prediction.risk_label,
+            ai_tag=prediction.ai_tag,
+            spend_tag=prediction.spend_tag,
+            sentiment=SentimentResponse(
+                score=prediction.sentiment.score,
+                label=prediction.sentiment.label,
+                emoji=prediction.sentiment.emoji,
+            ),
+            confidence=prediction.confidence,
+            tenant_id=x_tenant_id,
+            predicted_at=datetime.utcnow().isoformat(),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
 
 @app.post("/api/v1/predict-batch")
 async def predict_batch(
     batch: BatchPredictionRequest,
-    x_tenant_id: str = Header(..., alias="X-Tenant-ID"),
+    x_tenant_id: str = Header(default="default", alias="X-Tenant-ID"),
 ):
     """Predict guest behavior for multiple reservations (e.g., tonight's table list)."""
     predictor = get_predictor()
