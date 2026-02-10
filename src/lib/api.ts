@@ -6,7 +6,11 @@ import type {
   SimulatedReservation,
 } from "./types";
 
-const API_BASE = "/api";
+// In production, call the backend directly. In dev, use Vite proxy.
+const API_BASE =
+  import.meta.env.PROD
+    ? "https://smart-tags-predictor.onrender.com/api"
+    : "/api";
 const DEFAULT_TENANT = "restaurant_001";
 
 function tenantHeaders(tenantId?: string): Record<string, string> {
