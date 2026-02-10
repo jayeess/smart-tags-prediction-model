@@ -119,7 +119,7 @@ class BatchPredictionRequest(BaseModel):
 # ---------------------------------------------------------------------------
 TAG_RULES = [
     {"keywords": ["vip", "important", "high profile"], "tag": "VIP", "category": "Status", "color": "gold"},
-    {"keywords": ["celeb", "celebrity", "famous"], "tag": "Celeb", "category": "Status", "color": "gold"},
+    {"keywords": ["celebrity", "famous", "celeb guest"], "tag": "Celeb", "category": "Status", "color": "gold"},
     {"keywords": ["regular", "frequent", "loyal"], "tag": "Frequent Visitor", "category": "Status", "color": "gold"},
     {"keywords": ["birthday", "bday"], "tag": "Birthday", "category": "Milestone", "color": "blue"},
     {"keywords": ["anniversary", "wedding"], "tag": "Anniversary", "category": "Milestone", "color": "blue"},
