@@ -12,12 +12,10 @@ services:
         value: "3.11"
 
   # React frontend (Vite static site)
-  - type: web
+  - type: static
     name: emenu-smart-tags-ui
-    runtime: static
     repo: https://github.com/jayeess/smart-tags-prediction-model
     branch: claude/integrate-predictor-smart-tags-GrhmZ
-    plan: free
     buildCommand: npm install && npm run vercel-build
     staticPublishPath: ./dist
     headers:
