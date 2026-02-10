@@ -11,9 +11,9 @@ services:
       - key: PYTHON_VERSION
         value: "3.11"
 
+staticSites:
   # React frontend (Vite static site)
-  - type: static
-    name: emenu-smart-tags-ui
+  - name: emenu-smart-tags-ui
     repo: https://github.com/jayeess/smart-tags-prediction-model
     branch: claude/integrate-predictor-smart-tags-GrhmZ
     buildCommand: npm install && npm run vercel-build
