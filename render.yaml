@@ -1,8 +1,17 @@
 services:
   - type: web
-    name: emenu-smart-tags-api
-    runtime: docker
-    dockerfilePath: ./Dockerfile
+    name: smart-tags-predictor
+    env: python
+    region: ohio # or frankfurt, oregon, etc.
+    plan: free
+    
+    # 1. Install dependencies from the ROOT requirements.txt
+    buildCommand: pip install -r requirements.txt
+    
+    # 2. Enter the backend folder, then start the app
+    # This ensures the code can find "assets/" and "model.h5" correctly
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    
     envVars:
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: 3.9.16
