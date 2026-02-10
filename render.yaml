@@ -5,23 +5,19 @@ services:
     runtime: docker
     repo: https://github.com/jayeess/smart-tags-prediction-model
     branch: claude/integrate-predictor-smart-tags-GrhmZ
-    plan: free
     dockerfilePath: ./Dockerfile
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"
 
-staticSites:
   # React frontend (Vite static site)
-  - name: emenu-smart-tags-ui
+  - type: web
+    name: emenu-smart-tags-ui
+    runtime: static
     repo: https://github.com/jayeess/smart-tags-prediction-model
     branch: claude/integrate-predictor-smart-tags-GrhmZ
     buildCommand: npm install && npm run vercel-build
     staticPublishPath: ./dist
-    headers:
-      - path: /*
-        name: Cache-Control
-        value: public, max-age=0, must-revalidate
     routes:
       - type: rewrite
         source: /api/*
