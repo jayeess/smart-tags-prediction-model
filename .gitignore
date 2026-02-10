@@ -12,3 +12,6 @@ node_modules/
 .ruff_cache/
 .vercel/
 tsconfig.tsbuildinfo
+ml_service/preprocessor.pkl
+ml_raw/
+.ipynb_checkpoints/
