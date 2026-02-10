@@ -9,7 +9,7 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
-MODEL_DIR = Path(__file__).parent.parent / "ml_raw" / "FDS_PROJ"
+MODEL_DIR = Path(__file__).parent / "model"
 MODEL_PATH = MODEL_DIR / "fds_model_1.keras"
 DATASET_PATH = MODEL_DIR / "Hotel_reservations.csv"
 PREPROCESSOR_CACHE = Path(__file__).parent / "preprocessor.pkl"
