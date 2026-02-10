@@ -1,27 +1,8 @@
 services:
-  # FastAPI + TensorFlow backend
   - type: web
     name: emenu-smart-tags-api
     runtime: docker
-    repo: https://github.com/jayeess/smart-tags-prediction-model
-    branch: claude/integrate-predictor-smart-tags-GrhmZ
     dockerfilePath: ./Dockerfile
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"
-
-  # React frontend (Vite static site)
-  - type: web
-    name: emenu-smart-tags-ui
-    runtime: static
-    repo: https://github.com/jayeess/smart-tags-prediction-model
-    branch: claude/integrate-predictor-smart-tags-GrhmZ
-    buildCommand: npm install && npm run vercel-build
-    staticPublishPath: ./dist
-    routes:
-      - type: rewrite
-        source: /api/*
-        destination: https://emenu-smart-tags-api.onrender.com/api/*
-      - type: rewrite
-        source: /*
-        destination: /index.html
