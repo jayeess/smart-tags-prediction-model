@@ -2,15 +2,14 @@ services:
   - type: web
     name: smart-tags-predictor
     env: python
-    region: ohio # or frankfurt, oregon, etc.
+    region: ohio
     plan: free
     
-    # 1. Install dependencies from the ROOT requirements.txt
+    # 1. Install dependencies
     buildCommand: pip install -r requirements.txt
     
-    # 2. Enter the backend folder, then start the app
-    # This ensures the code can find "assets/" and "model.h5" correctly
-    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    # 2. Start the app (removed 'cd backend')
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     
     envVars:
       - key: PYTHON_VERSION
