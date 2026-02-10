@@ -2,10 +2,11 @@ services:
   - type: web
     name: smart-tags-predictor
     env: python
-    region: frankfurt  # or ohio, singapore, etc.
-    plan: free         # change to 'starter' if you need more RAM for the model
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    region: frankfurt
+    plan: free
+    # We enter the directory before running commands
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.9.0
+        value: 3.9.16
