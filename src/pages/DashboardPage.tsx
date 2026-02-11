@@ -10,7 +10,6 @@ import {
 } from "lucide-react";
 import { healthCheck } from "../lib/api";
 import GuestCard from "../components/GuestCard";
-import { useMemo } from "react";
 import type { PredictionResponseUnified } from "../lib/types";
 import { fetchGuestPrediction } from "../lib/services/guestService";
 
@@ -24,6 +23,10 @@ interface StatCard {
 export default function DashboardPage() {
   const [health, setHealth] = useState<Record<string, unknown> | null>(null);
   const [prediction, setPrediction] = useState<PredictionResponseUnified | null>(null);
+  const [leadHours, setLeadHours] = useState<number>(0);
+  const [spend, setSpend] = useState<number>(70);
+  const [notes, setNotes] = useState<string>("Vegan birthday, window seat preferred");
+  const [pending, setPending] = useState(false);
 
   useEffect(() => {
     healthCheck().then(setHealth).catch(() => {});
@@ -144,35 +147,80 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* Simulate Guest */}
+      {/* Playground */}
       <div className="mt-8">
         <div className="card p-6">
-          <div className="flex items-center justify-between">
+          <h3 className="font-semibold mb-4">Playground</h3>
+          <div className="grid grid-cols-3 gap-4">
             <div>
-              <h3 className="font-semibold">Simulate Guest</h3>
-              <p className="text-sm text-gray-500">Runs a test prediction with vegan birthday notes</p>
+              <label className="text-sm text-gray-600">Lead Time (hours)</label>
+              <input
+                type="number"
+                min={0}
+                className="mt-1 w-full rounded-lg border px-3 py-2"
+                value={leadHours}
+                onChange={async (e) => {
+                  const v = Number(e.target.value);
+                  setLeadHours(v);
+                  setPending(true);
+                  const res = await fetchGuestPrediction({
+                    lead_time: v,
+                    avg_price: spend,
+                    special_requests: notes,
+                  });
+                  setPrediction(res);
+                  setPending(false);
+                }}
+              />
             </div>
-            <button
-              className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
-              onClick={async () => {
-                const res = await fetchGuestPrediction({
-                  lead_time: 0,
-                  avg_price: 70,
-                  special_requests: "Vegan birthday, window seat preferred",
-                  party_size: 2,
-                  children: 0,
-                });
-                setPrediction(res);
-              }}
-            >
-              Run
-            </button>
+            <div>
+              <label className="text-sm text-gray-600">Spend ($)</label>
+              <input
+                type="number"
+                min={0}
+                className="mt-1 w-full rounded-lg border px-3 py-2"
+                value={spend}
+                onChange={async (e) => {
+                  const v = Number(e.target.value);
+                  setSpend(v);
+                  setPending(true);
+                  const res = await fetchGuestPrediction({
+                    lead_time: leadHours,
+                    avg_price: v,
+                    special_requests: notes,
+                  });
+                  setPrediction(res);
+                  setPending(false);
+                }}
+              />
+            </div>
+            <div className="col-span-3">
+              <label className="text-sm text-gray-600">Notes</label>
+              <textarea
+                className="mt-1 w-full rounded-lg border px-3 py-2"
+                rows={3}
+                value={notes}
+                onChange={async (e) => {
+                  const v = e.target.value;
+                  setNotes(v);
+                  setPending(true);
+                  const res = await fetchGuestPrediction({
+                    lead_time: leadHours,
+                    avg_price: spend,
+                    special_requests: v,
+                  });
+                  setPrediction(res);
+                  setPending(false);
+                }}
+              />
+            </div>
           </div>
           {prediction && (
             <div className="mt-6">
               <GuestCard data={prediction} />
             </div>
           )}
+          {pending && <div className="mt-3 text-xs text-gray-500">Updating…</div>}
         </div>
       </div>
 

@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Utensils, Calendar, Armchair } from "lucide-react";
 import type { PredictionResponseUnified, SmartTag } from "../lib/types";
-import { clsx } from "clsx";
+import clsx from "clsx";
 
 function iconForTag(tag: SmartTag) {
   if (tag.category === "Dietary") return Utensils;
@@ -31,17 +31,22 @@ export default function GuestCard({ data }: { data: PredictionResponseUnified })
         pulse
       )}
     >
-      <div className="flex items-center justify-between">
-        <div className="text-sm uppercase tracking-wide text-slate-300">AI Risk</div>
-        <div className="text-sm text-slate-400">Score</div>
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="text-sm uppercase tracking-wide text-slate-300">Smart Guest</div>
+        </div>
+        <div className="text-right">
+          <div className="flex items-center gap-2 justify-end">
+            <div className="text-3xl font-semibold">{(score * 100).toFixed(0)}%</div>
+            <div className="text-lg text-slate-300">{data.ai_prediction.risk_label}</div>
+            <span className="text-xs px-2 py-1 rounded bg-slate-800/80 border border-slate-700" title={data.ai_prediction.explanation}>
+              Why?
+            </span>
+          </div>
+        </div>
       </div>
-      <div className="mt-2 flex items-end gap-3">
-        <div className="text-3xl font-semibold">{(score * 100).toFixed(0)}%</div>
-        <div className="text-lg text-slate-300">{data.ai_prediction.risk_label}</div>
-      </div>
-      <div className="mt-2 text-slate-400 text-sm">{data.ai_prediction.explanation}</div>
-      <div className="mt-5 flex flex-wrap gap-2">
-        {data.smart_tags.map((t, idx) => {
+      <div className="mt-4 flex flex-wrap gap-2">
+        {data.smart_tags.filter((t) => t.category === "Seating").map((t, idx) => {
           const Icon = iconForTag(t);
           return (
             <div
@@ -53,6 +58,25 @@ export default function GuestCard({ data }: { data: PredictionResponseUnified })
             </div>
           );
         })}
+      </div>
+      <div className="mt-5 border-t border-slate-700/50 pt-4">
+        <div className="text-xs uppercase tracking-wide text-slate-400 mb-2">Notes</div>
+        <div className="flex flex-wrap gap-2">
+          {data.smart_tags
+            .filter((t) => t.category === "Dietary" || t.category === "Occasion")
+            .map((t, idx) => {
+              const Icon = iconForTag(t);
+              return (
+                <div
+                  key={`${t.category}-${t.label}-${idx}`}
+                  className={clsx("px-3 py-1.5 rounded-full border text-sm inline-flex items-center gap-1.5", badgeColor(t))}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{t.label}</span>
+                </div>
+              );
+            })}
+        </div>
       </div>
     </motion.div>
   );
