@@ -18,6 +18,7 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+import re
 
 # Ensure ml_service is importable
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -154,6 +155,35 @@ def extract_rule_tags(text: str) -> list[str]:
         tags.append("Dietary")
     if any(k in t for k in ["birthday", "anniversary"]):
         tags.append("Occasion")
+    return tags
+
+
+def calibrate_restaurant_data(
+    booking_advance_days: int,
+    estimated_spend_per_cover: float,
+) -> tuple[int, float]:
+    adjusted_lead = booking_advance_days
+    if booking_advance_days < 2:
+        adjusted_lead = 5
+    adjusted_spend = estimated_spend_per_cover * 1.5 if estimated_spend_per_cover < 80 else estimated_spend_per_cover
+    return adjusted_lead, adjusted_spend
+
+
+def analyze_smart_tags(text: str) -> list[dict]:
+    t = text.lower()
+    tags = []
+    dietary_words = ["vegan", "veg", "gluten", "dairy", "nut", "allergy", "halal", "kosher", "jain"]
+    occasion_words = ["birthday", "bday", "anniversary", "celebration", "honeymoon", "date"]
+    seating_words = ["window", "quiet", "booth", "outside", "terrace"]
+    for w in dietary_words:
+        if w in t:
+            tags.append({"category": "Dietary", "label": w.title(), "color": "green"})
+    for w in occasion_words:
+        if w in t:
+            tags.append({"category": "Occasion", "label": w.title(), "color": "purple"})
+    for w in seating_words:
+        if w in t:
+            tags.append({"category": "Seating", "label": w.title(), "color": "blue"})
     return tags
 
 
@@ -363,6 +393,53 @@ async def predict_batch(
         )
 
     return {"predictions": [r.model_dump() for r in results], "count": len(results)}
+
+
+@app.post("/api/predict-guest-behavior")
+async def predict_guest_behavior_unified(
+    reservation: ReservationInput,
+    x_tenant_id: str = Header(default="restaurant_001", alias="X-Tenant-ID"),
+):
+    predictor = get_predictor()
+    adj_lead, adj_spend = calibrate_restaurant_data(
+        reservation.booking_advance_days, reservation.estimated_spend_per_cover
+    )
+    prediction = predictor.predict(
+        tenant_id=x_tenant_id,
+        party_size=reservation.party_size,
+        children=reservation.children,
+        booking_advance_days=adj_lead,
+        special_needs_count=reservation.special_needs_count,
+        is_repeat_guest=reservation.is_repeat_guest,
+        estimated_spend_per_cover=adj_spend,
+        reservation_date=reservation.reservation_date,
+        previous_cancellations=reservation.previous_cancellations,
+        previous_completions=reservation.previous_completions,
+        booking_channel=reservation.booking_channel,
+        notes=reservation.notes,
+    )
+    risk_score = prediction.no_show_risk
+    if risk_score > 0.65:
+        risk_label = "High Risk"
+    elif risk_score >= 0.35:
+        risk_label = "Medium Risk"
+    else:
+        risk_label = "Low Risk"
+    parts = []
+    if reservation.booking_advance_days < 2:
+        parts.append("Short lead time")
+    if adj_spend >= 120:
+        parts.append("High spend")
+    explanation = " + ".join(parts) if parts else "Calibrated restaurant inputs"
+    smart_tags = analyze_smart_tags(reservation.notes)
+    return {
+        "ai_prediction": {
+            "risk_score": round(risk_score, 3),
+            "risk_label": risk_label,
+            "explanation": explanation,
+        },
+        "smart_tags": smart_tags,
+    }
 
 
 @app.post("/api/v1/reservations/analyze-tags", response_model=AnalyzeTagsResponse)
