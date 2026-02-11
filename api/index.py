@@ -84,6 +84,7 @@ class PredictionResponse(BaseModel):
     risk_label: str
     ai_tag: str
     spend_tag: str
+    rule_tags: list[str]
     sentiment: SentimentResponse
     confidence: float
     tenant_id: str
@@ -144,6 +145,16 @@ def extract_tags(text: str) -> list[TagResult]:
                 found.append(TagResult(tag=rule["tag"], category=rule["category"], color=rule["color"]))
                 seen_tags.add(rule["tag"])
     return found
+
+
+def extract_rule_tags(text: str) -> list[str]:
+    t = text.lower()
+    tags = []
+    if any(k in t for k in ["vegan", "gluten", "allergy"]):
+        tags.append("Dietary")
+    if any(k in t for k in ["birthday", "anniversary"]):
+        tags.append("Occasion")
+    return tags
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +306,7 @@ async def predict_guest_behavior(
         risk_label=prediction.risk_label,
         ai_tag=prediction.ai_tag,
         spend_tag=prediction.spend_tag,
+        rule_tags=extract_rule_tags(reservation.notes),
         sentiment=SentimentResponse(
             score=prediction.sentiment.score,
             label=prediction.sentiment.label,
@@ -338,6 +350,7 @@ async def predict_batch(
                 risk_label=prediction.risk_label,
                 ai_tag=prediction.ai_tag,
                 spend_tag=prediction.spend_tag,
+                rule_tags=extract_rule_tags(reservation.notes),
                 sentiment=SentimentResponse(
                     score=prediction.sentiment.score,
                     label=prediction.sentiment.label,
