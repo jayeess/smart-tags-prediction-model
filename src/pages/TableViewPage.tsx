@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import type { GuestPrediction, SimulatedReservation } from "../lib/types";
 import { simulateReservations, predictGuestBehavior } from "../lib/api";
 import GuestInsightCard from "../components/GuestInsightCard";
-import { Utensils, RefreshCw, Loader2, Eye } from "lucide-react";
+import GuestDetailView from "../components/GuestDetailView";
+import { Utensils, RefreshCw, Loader2, Eye, Users } from "lucide-react";
 
 export default function TableViewPage() {
   const [reservations, setReservations] = useState<SimulatedReservation[]>([]);
@@ -12,6 +14,7 @@ export default function TableViewPage() {
   const [loading, setLoading] = useState(false);
   const [predicting, setPredicting] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const loadReservations = async () => {
     setLoading(true);
@@ -28,6 +31,7 @@ export default function TableViewPage() {
   const predictForGuest = async (res: SimulatedReservation) => {
     if (predictions.has(res.reservation_id)) {
       setSelectedId(res.reservation_id);
+      setDetailOpen(true);
       return;
     }
     setPredicting(res.reservation_id);
@@ -49,8 +53,11 @@ export default function TableViewPage() {
         },
         res.tenant_id
       );
-      setPredictions((prev) => new Map(prev).set(res.reservation_id, prediction));
+      setPredictions((prev) =>
+        new Map(prev).set(res.reservation_id, prediction)
+      );
       setSelectedId(res.reservation_id);
+      setDetailOpen(true);
     } finally {
       setPredicting(null);
     }
@@ -61,63 +68,88 @@ export default function TableViewPage() {
     if (!p) return null;
     const color =
       p.risk_label === "High Risk"
-        ? "bg-red-500"
+        ? "bg-red-500 shadow-red-500/50"
         : p.risk_label === "Medium Risk"
-        ? "bg-amber-500"
-        : "bg-emerald-500";
-    return <span className={`w-2 h-2 rounded-full ${color}`} />;
+        ? "bg-amber-500 shadow-amber-500/50"
+        : "bg-emerald-500 shadow-emerald-500/50";
+    return <span className={`w-2 h-2 rounded-full shadow-lg ${color}`} />;
+  };
+
+  const container = {
+    hidden: {},
+    show: { transition: { staggerChildren: 0.04 } },
+  };
+  const item = {
+    hidden: { opacity: 0, x: -10 },
+    show: { opacity: 1, x: 0 },
   };
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
+    <div className="p-6 md:p-8 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Utensils className="w-6 h-6 text-indigo-500" />
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Utensils className="w-6 h-6 text-indigo-400" />
             Table View
           </h1>
-          <p className="text-gray-500 mt-1">
-            Simulated tonight's reservations — click a guest to fetch predictions
+          <p className="text-slate-500 text-sm mt-1">
+            Tonight's reservations — tap a guest for AI insights
           </p>
-        </div>
-        <button
+        </motion.div>
+        <motion.button
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
           onClick={loadReservations}
           disabled={loading}
-          className="btn-primary flex items-center gap-2"
+          className="btn-primary flex items-center gap-2 text-sm"
         >
           {loading ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <RefreshCw className="w-4 h-4" />
           )}
-          {reservations.length ? "Refresh" : "Load Reservations"}
-        </button>
+          {reservations.length ? "Refresh" : "Load"}
+        </motion.button>
       </div>
 
       {reservations.length === 0 ? (
-        <div className="card text-center py-16 text-gray-400">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="glass text-center py-20 text-slate-600"
+        >
           <Utensils className="w-12 h-12 mx-auto mb-3" />
-          <p>Click "Load Reservations" to simulate tonight's table list</p>
-        </div>
+          <p className="text-sm">
+            Click "Load" to simulate tonight's table list
+          </p>
+        </motion.div>
       ) : (
-        <div className="grid grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
           {/* Table List */}
-          <div className="col-span-3 space-y-2">
+          <motion.div
+            variants={container}
+            initial="hidden"
+            animate="show"
+            className="md:col-span-3 space-y-2"
+          >
             {reservations.map((res) => (
-              <button
+              <motion.button
                 key={res.reservation_id}
+                variants={item}
                 onClick={() => predictForGuest(res)}
-                className={`w-full text-left card p-4 flex items-center justify-between hover:border-indigo-200 transition-colors ${
+                className={`w-full text-left glass glass-hover p-4 flex items-center justify-between transition-all ${
                   selectedId === res.reservation_id
-                    ? "border-indigo-400 ring-1 ring-indigo-200"
+                    ? "border-indigo-500/50 glow-indigo"
                     : ""
                 }`}
               >
                 <div className="flex items-center gap-3">
                   {riskDot(res.reservation_id)}
                   <div>
-                    <div className="font-medium text-sm">{res.guest_name}</div>
-                    <div className="text-xs text-gray-400">
+                    <div className="font-medium text-sm text-white">
+                      {res.guest_name}
+                    </div>
+                    <div className="text-[11px] text-slate-500">
                       Table {res.table_number} | Party of {res.party_size} |{" "}
                       {res.reservation_time}
                     </div>
@@ -125,37 +157,61 @@ export default function TableViewPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {res.notes && (
-                    <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full truncate max-w-[120px]">
+                    <span className="hidden md:inline text-[10px] bg-white/5 text-slate-500 px-2 py-0.5 rounded-lg truncate max-w-[120px]">
                       {res.notes.slice(0, 25)}...
                     </span>
                   )}
                   {predicting === res.reservation_id ? (
-                    <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
+                    <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
                   ) : (
-                    <Eye className="w-4 h-4 text-gray-300" />
+                    <Eye className="w-4 h-4 text-slate-600" />
                   )}
                 </div>
-              </button>
+              </motion.button>
             ))}
-          </div>
+          </motion.div>
 
-          {/* Prediction Panel */}
-          <div className="col-span-2">
-            {selectedId && predictions.has(selectedId) ? (
-              <div className="sticky top-8">
-                <GuestInsightCard prediction={predictions.get(selectedId)!} />
-              </div>
-            ) : (
-              <div className="card text-center py-12 text-gray-400 sticky top-8">
-                <Eye className="w-10 h-10 mx-auto mb-3" />
-                <p className="text-sm">
-                  Click a reservation to see guest insights
-                </p>
-              </div>
-            )}
+          {/* Desktop Prediction Panel (hidden on mobile — drawer used instead) */}
+          <div className="hidden md:block md:col-span-2">
+            <AnimatePresence mode="wait">
+              {selectedId && predictions.has(selectedId) ? (
+                <motion.div
+                  key={selectedId}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="sticky top-8"
+                >
+                  <GuestInsightCard prediction={predictions.get(selectedId)!} />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="empty"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="glass text-center py-16 text-slate-600 sticky top-8"
+                >
+                  <Eye className="w-10 h-10 mx-auto mb-3" />
+                  <p className="text-sm">
+                    Click a reservation to see guest insights
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       )}
+
+      {/* Mobile Detail Drawer */}
+      <div className="md:hidden">
+        <GuestDetailView
+          prediction={
+            selectedId ? predictions.get(selectedId) ?? null : null
+          }
+          open={detailOpen}
+          onClose={() => setDetailOpen(false)}
+        />
+      </div>
     </div>
   );
 }

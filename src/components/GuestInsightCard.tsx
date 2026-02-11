@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import type { GuestPrediction } from "../lib/types";
 import {
   AITagBadge,
@@ -5,111 +6,118 @@ import {
   SentimentBadge,
   ConfidenceMeter,
 } from "./SmartTagBadge";
-import {
-  User,
-  TrendingUp,
-  AlertTriangle,
-  Shield,
-  Clock,
-} from "lucide-react";
+import { User, Shield, AlertTriangle, TrendingUp, Clock } from "lucide-react";
 
-interface GuestInsightCardProps {
+interface Props {
   prediction: GuestPrediction;
   compact?: boolean;
+  onClick?: () => void;
 }
 
-export default function GuestInsightCard({
-  prediction,
-  compact = false,
-}: GuestInsightCardProps) {
-  const riskColor =
-    prediction.risk_label === "High Risk"
-      ? "border-l-red-500"
-      : prediction.risk_label === "Medium Risk"
-      ? "border-l-amber-500"
-      : "border-l-emerald-500";
+export default function GuestInsightCard({ prediction, compact, onClick }: Props) {
+  const isHighRisk = prediction.no_show_risk >= 0.6;
+  const isMedRisk = prediction.no_show_risk >= 0.35;
+
+  const glowClass = isHighRisk
+    ? "glow-red animate-pulse-red"
+    : isMedRisk
+    ? "glow-amber"
+    : "glow-green";
+
+  const riskColor = isHighRisk
+    ? "text-red-400"
+    : isMedRisk
+    ? "text-amber-400"
+    : "text-emerald-400";
 
   if (compact) {
     return (
-      <div
-        className={`bg-white rounded-lg border border-gray-100 border-l-4 ${riskColor} p-3 animate-slide-up`}
+      <motion.div
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        className={`glass glass-hover p-4 cursor-pointer ${isHighRisk ? "glow-red animate-pulse-red" : ""}`}
+        onClick={onClick}
       >
         <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <User className="w-4 h-4 text-gray-400" />
-            <span className="font-medium text-sm">{prediction.guest_name}</span>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
+              <User className="w-4 h-4 text-slate-400" />
+            </div>
+            <span className="font-semibold text-sm text-white">{prediction.guest_name}</span>
           </div>
           <AITagBadge tag={prediction.ai_tag} />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-lg font-bold ${riskColor}`}>
+            {(prediction.reliability_score * 100).toFixed(0)}%
+          </span>
           <SpendBadge tier={prediction.spend_tag} />
           <SentimentBadge sentiment={prediction.sentiment} />
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div
-      className={`card border-l-4 ${riskColor} animate-slide-up`}
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.3 }}
+      className={`glass p-6 ${glowClass}`}
     >
       {/* Header */}
-      <div className="flex items-start justify-between mb-4">
+      <div className="flex items-start justify-between mb-5">
         <div>
-          <h3 className="font-semibold text-lg flex items-center gap-2">
-            <User className="w-5 h-5 text-gray-400" />
+          <h3 className="font-bold text-lg text-white flex items-center gap-2">
+            <div className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center">
+              <User className="w-5 h-5 text-slate-400" />
+            </div>
             {prediction.guest_name}
           </h3>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="text-[11px] text-slate-500 mt-1 ml-11">
             Tenant: {prediction.tenant_id}
           </p>
         </div>
         <AITagBadge tag={prediction.ai_tag} />
       </div>
 
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div className="bg-gray-50 rounded-lg p-3">
-          <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
+      {/* Score Grid */}
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <div className="glass rounded-xl p-4">
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium mb-1">
             <Shield className="w-3.5 h-3.5" />
-            Reliability Score
+            Reliability
           </div>
-          <div className="text-2xl font-bold">
-            {(prediction.reliability_score * 100).toFixed(1)}%
+          <div className="text-3xl font-extrabold text-white">
+            {(prediction.reliability_score * 100).toFixed(1)}
+            <span className="text-sm text-slate-500 ml-0.5">%</span>
           </div>
         </div>
 
-        <div className="bg-gray-50 rounded-lg p-3">
-          <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
+        <div className="glass rounded-xl p-4">
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium mb-1">
             <AlertTriangle className="w-3.5 h-3.5" />
             No-Show Risk
           </div>
-          <div
-            className={`text-2xl font-bold ${
-              prediction.no_show_risk >= 0.6
-                ? "text-red-600"
-                : prediction.no_show_risk >= 0.35
-                ? "text-amber-600"
-                : "text-emerald-600"
-            }`}
-          >
-            {(prediction.no_show_risk * 100).toFixed(1)}%
+          <div className={`text-3xl font-extrabold ${riskColor}`}>
+            {(prediction.no_show_risk * 100).toFixed(1)}
+            <span className="text-sm opacity-60 ml-0.5">%</span>
           </div>
         </div>
       </div>
 
-      {/* Tags Row */}
-      <div className="flex items-center gap-2 flex-wrap mb-4">
+      {/* Tags */}
+      <div className="flex items-center gap-2 flex-wrap mb-5">
         <SpendBadge tier={prediction.spend_tag} />
         <SentimentBadge sentiment={prediction.sentiment} />
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">
+        <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white/5 ${riskColor}`}>
           {prediction.risk_label}
         </span>
       </div>
 
       {/* Confidence */}
-      <div>
-        <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
+      <div className="mb-3">
+        <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium mb-1.5">
           <TrendingUp className="w-3 h-3" />
           Model Confidence
         </div>
@@ -117,10 +125,10 @@ export default function GuestInsightCard({
       </div>
 
       {/* Timestamp */}
-      <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-1 text-xs text-gray-400">
+      <div className="pt-3 border-t border-white/5 flex items-center gap-1 text-[11px] text-slate-600">
         <Clock className="w-3 h-3" />
         {new Date(prediction.predicted_at).toLocaleString()}
       </div>
-    </div>
+    </motion.div>
   );
 }
