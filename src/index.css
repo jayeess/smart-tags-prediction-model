@@ -86,3 +86,51 @@
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
 }
+
+/* Cyber range slider */
+.slider-cyber {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.06);
+  outline: none;
+}
+
+.slider-cyber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #6366f1;
+  box-shadow: 0 0 12px rgba(99,102,241,0.6), 0 0 30px rgba(99,102,241,0.2);
+  cursor: pointer;
+  border: 2px solid rgba(255,255,255,0.2);
+  transition: box-shadow 0.2s, transform 0.15s;
+}
+
+.slider-cyber::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 20px rgba(99,102,241,0.8), 0 0 40px rgba(99,102,241,0.3);
+}
+
+.slider-cyber::-webkit-slider-thumb:active {
+  transform: scale(0.95);
+}
+
+.slider-cyber::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #6366f1;
+  box-shadow: 0 0 12px rgba(99,102,241,0.6);
+  cursor: pointer;
+  border: 2px solid rgba(255,255,255,0.2);
+}
+
+/* Select dropdown dark options */
+.input-dark option {
+  background: #0f172a;
+  color: #e2e8f0;
+}
