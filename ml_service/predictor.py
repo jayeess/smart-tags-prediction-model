@@ -103,9 +103,9 @@ class GuestBehaviorPredictor:
         confidence = round(abs(reliability_score - 0.5) * 2, 3)
 
         # Step 3: Determine risk label
-        if no_show_risk >= 0.6:
+        if no_show_risk >= 0.7:
             risk_label = "High Risk"
-        elif no_show_risk >= 0.35:
+        elif no_show_risk >= 0.4:
             risk_label = "Medium Risk"
         else:
             risk_label = "Low Risk"

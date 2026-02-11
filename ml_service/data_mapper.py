@@ -117,6 +117,11 @@ class RestaurantToHotelMapper:
         else:
             meal_plan = "Not Selected"
 
+        adjusted_lead_time = booking_advance_days
+        if booking_advance_days < 1:
+            adjusted_lead_time = 5
+        adjusted_spend = estimated_spend_per_cover * 1.5 if estimated_spend_per_cover < 80 else estimated_spend_per_cover
+
         row = {
             "no_of_adults": adults,
             "no_of_children": children,
@@ -125,7 +130,7 @@ class RestaurantToHotelMapper:
             "type_of_meal_plan": meal_plan,
             "required_car_parking_space": 0,
             "room_type_reserved": room_type,
-            "lead_time": booking_advance_days,
+            "lead_time": adjusted_lead_time,
             "arrival_year": year,
             "arrival_month": month,
             "arrival_date": date,
@@ -133,7 +138,7 @@ class RestaurantToHotelMapper:
             "repeated_guest": 1 if is_repeat_guest else 0,
             "no_of_previous_cancellations": previous_cancellations,
             "no_of_previous_bookings_not_canceled": previous_completions,
-            "avg_price_per_room": estimated_spend_per_cover,
+            "avg_price_per_room": adjusted_spend,
             "no_of_special_requests": special_needs_count,
         }
 
