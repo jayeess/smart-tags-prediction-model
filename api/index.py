@@ -159,14 +159,14 @@ def extract_rule_tags(text: str) -> list[str]:
 
 
 def calibrate_restaurant_data(
-    booking_advance_days: int,
+    lead_time_hours: int,
     estimated_spend_per_cover: float,
 ) -> tuple[int, float]:
-    adjusted_lead = booking_advance_days
-    if booking_advance_days < 2:
-        adjusted_lead = 5
+    adjusted_lead_days = max(1, int(lead_time_hours // 24))
+    if lead_time_hours < 24:
+        adjusted_lead_days = 5
     adjusted_spend = estimated_spend_per_cover * 1.5 if estimated_spend_per_cover < 80 else estimated_spend_per_cover
-    return adjusted_lead, adjusted_spend
+    return adjusted_lead_days, adjusted_spend
 
 
 def analyze_smart_tags(text: str) -> list[dict]:
@@ -404,33 +404,39 @@ async def predict_guest_behavior_unified(
     adj_lead, adj_spend = calibrate_restaurant_data(
         reservation.booking_advance_days, reservation.estimated_spend_per_cover
     )
-    prediction = predictor.predict(
-        tenant_id=x_tenant_id,
-        party_size=reservation.party_size,
-        children=reservation.children,
-        booking_advance_days=adj_lead,
-        special_needs_count=reservation.special_needs_count,
-        is_repeat_guest=reservation.is_repeat_guest,
-        estimated_spend_per_cover=adj_spend,
-        reservation_date=reservation.reservation_date,
-        previous_cancellations=reservation.previous_cancellations,
-        previous_completions=reservation.previous_completions,
-        booking_channel=reservation.booking_channel,
-        notes=reservation.notes,
-    )
-    risk_score = prediction.no_show_risk
-    if risk_score > 0.65:
-        risk_label = "High Risk"
-    elif risk_score >= 0.35:
-        risk_label = "Medium Risk"
-    else:
-        risk_label = "Low Risk"
+    try:
+        prediction = predictor.predict(
+            tenant_id=x_tenant_id,
+            party_size=reservation.party_size,
+            children=reservation.children,
+            booking_advance_days=adj_lead,
+            special_needs_count=reservation.special_needs_count,
+            is_repeat_guest=reservation.is_repeat_guest,
+            estimated_spend_per_cover=adj_spend,
+            reservation_date=reservation.reservation_date,
+            previous_cancellations=reservation.previous_cancellations,
+            previous_completions=reservation.previous_completions,
+            booking_channel=reservation.booking_channel,
+            notes=reservation.notes,
+        )
+        risk_score = prediction.no_show_risk
+        if risk_score > 0.65:
+            risk_label = "High Risk"
+        elif risk_score >= 0.35:
+            risk_label = "Medium Risk"
+        else:
+            risk_label = "Low Risk"
+    except Exception:
+        risk_score = 0.5
+        risk_label = "AI Unavailable"
     parts = []
-    if reservation.booking_advance_days < 2:
-        parts.append("Short lead time")
-    if adj_spend >= 120:
-        parts.append("High spend")
-    explanation = " + ".join(parts) if parts else "Calibrated restaurant inputs"
+    if reservation.booking_advance_days < 24:
+        parts.append("Short Notice")
+    if reservation.party_size > 6:
+        parts.append("Large Group")
+    if reservation.estimated_spend_per_cover < 80:
+        parts.append("Low Spend")
+    explanation = "Reason: " + (" + ".join(parts) if parts else "Calibrated restaurant inputs")
     smart_tags = analyze_smart_tags(reservation.notes)
     return {
         "ai_prediction": {
