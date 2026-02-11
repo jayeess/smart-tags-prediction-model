@@ -4,9 +4,26 @@ export interface Sentiment {
   emoji: string;
 }
 
+export interface SmartTag {
+  category: string;
+  label: string;
+  color: string;
+  matched?: string;
+}
+
+export interface AIPrediction {
+  risk_score: number;    // 0-100 integer
+  risk_label: string;
+  explanation: string;
+}
+
 export interface GuestPrediction {
   guest_name: string;
   reservation_id?: string;
+  // New unified response fields
+  ai_prediction: AIPrediction;
+  smart_tags: SmartTag[];
+  // Core prediction fields
   reliability_score: number;
   no_show_risk: number;
   risk_label: "Low Risk" | "Medium Risk" | "High Risk";
@@ -14,6 +31,7 @@ export interface GuestPrediction {
   spend_tag: string;
   sentiment: Sentiment;
   confidence: number;
+  explanation: string;
   tenant_id: string;
   predicted_at: string;
 }

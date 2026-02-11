@@ -5,8 +5,9 @@ import {
   SpendBadge,
   SentimentBadge,
   ConfidenceMeter,
+  NoteSmartTag,
 } from "./SmartTagBadge";
-import { User, Shield, AlertTriangle, TrendingUp, Clock } from "lucide-react";
+import { User, Shield, AlertTriangle, TrendingUp, Clock, MessageSquare, Tags } from "lucide-react";
 
 interface Props {
   prediction: GuestPrediction;
@@ -15,8 +16,8 @@ interface Props {
 }
 
 export default function GuestInsightCard({ prediction, compact, onClick }: Props) {
-  const isHighRisk = prediction.no_show_risk >= 0.6;
-  const isMedRisk = prediction.no_show_risk >= 0.35;
+  const isHighRisk = prediction.no_show_risk >= 0.7;
+  const isMedRisk = prediction.no_show_risk >= 0.4;
 
   const glowClass = isHighRisk
     ? "glow-red animate-pulse-red"
@@ -100,13 +101,39 @@ export default function GuestInsightCard({ prediction, compact, onClick }: Props
             No-Show Risk
           </div>
           <div className={`text-3xl font-extrabold ${riskColor}`}>
-            {(prediction.no_show_risk * 100).toFixed(1)}
+            {prediction.ai_prediction?.risk_score ?? (prediction.no_show_risk * 100).toFixed(0)}
             <span className="text-sm opacity-60 ml-0.5">%</span>
           </div>
         </div>
       </div>
 
-      {/* Tags */}
+      {/* Explanation */}
+      {prediction.explanation && (
+        <div className="glass rounded-xl p-3 mb-5">
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium mb-1">
+            <MessageSquare className="w-3 h-3" />
+            Why this score
+          </div>
+          <p className="text-xs text-slate-300">{prediction.explanation}</p>
+        </div>
+      )}
+
+      {/* Smart Tags from Notes */}
+      {prediction.smart_tags && prediction.smart_tags.length > 0 && (
+        <div className="mb-5">
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium mb-2">
+            <Tags className="w-3 h-3" />
+            Detected Tags
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {prediction.smart_tags.map((tag, i) => (
+              <NoteSmartTag key={`${tag.category}-${tag.label}-${i}`} tag={tag} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Status Tags */}
       <div className="flex items-center gap-2 flex-wrap mb-5">
         <SpendBadge tier={prediction.spend_tag} />
         <SentimentBadge sentiment={prediction.sentiment} />

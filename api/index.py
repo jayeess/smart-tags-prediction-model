@@ -1,9 +1,9 @@
 """FastAPI backend for eMenu Smart Tags with predictive intelligence.
 
 Provides endpoints for:
-- Guest behavior prediction (ANN model inference)
+- Guest behavior prediction (ANN model inference with domain adaptation)
 - Sentiment analysis on reservation notes
-- Smart tag generation
+- Smart tag generation (rule-based + AI)
 - Synthetic data simulation
 - Demo scenarios
 
@@ -24,8 +24,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 app = FastAPI(
     title="eMenu Smart Tags - Predictive Intelligence API",
-    version="2.0.0",
-    description="AI-powered guest behavior prediction and smart tagging for restaurants.",
+    version="3.0.0",
+    description="AI-powered guest behavior prediction and smart tagging for restaurants. "
+                "Includes domain adaptation layer for hotel-trained model.",
 )
 
 app.add_middleware(
@@ -76,9 +77,27 @@ class SentimentResponse(BaseModel):
     emoji: str
 
 
+class SmartTagResponse(BaseModel):
+    category: str
+    label: str
+    color: str
+    matched: Optional[str] = None
+
+
+class AIPredictionResponse(BaseModel):
+    risk_score: int  # 0-100 integer for display
+    risk_label: str
+    explanation: str
+
+
 class PredictionResponse(BaseModel):
     guest_name: str
     reservation_id: Optional[str] = None
+    # AI prediction block
+    ai_prediction: AIPredictionResponse
+    # Smart tags from notes analysis
+    smart_tags: list[SmartTagResponse]
+    # Legacy fields (kept for backward compat with frontend)
     reliability_score: float
     no_show_risk: float
     risk_label: str
@@ -86,6 +105,7 @@ class PredictionResponse(BaseModel):
     spend_tag: str
     sentiment: SentimentResponse
     confidence: float
+    explanation: str
     tenant_id: str
     predicted_at: str
 
@@ -115,7 +135,7 @@ class BatchPredictionRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Tag extraction (regex-based fallback engine)
+# Tag extraction (regex-based fallback engine for /analyze-tags endpoint)
 # ---------------------------------------------------------------------------
 TAG_RULES = [
     {"keywords": ["vip", "important", "high profile"], "tag": "VIP", "category": "Status", "color": "gold"},
@@ -144,6 +164,49 @@ def extract_tags(text: str) -> list[TagResult]:
                 found.append(TagResult(tag=rule["tag"], category=rule["category"], color=rule["color"]))
                 seen_tags.add(rule["tag"])
     return found
+
+
+def _build_prediction_response(
+    reservation: ReservationInput,
+    prediction,
+    tenant_id: str,
+) -> PredictionResponse:
+    """Build the unified prediction response from a GuestPrediction."""
+    risk_score_pct = round(prediction.no_show_risk * 100)
+
+    smart_tags = [
+        SmartTagResponse(
+            category=t["category"],
+            label=t["label"],
+            color=t["color"],
+            matched=t.get("matched"),
+        )
+        for t in prediction.smart_tags
+    ]
+
+    return PredictionResponse(
+        guest_name=reservation.guest_name,
+        ai_prediction=AIPredictionResponse(
+            risk_score=risk_score_pct,
+            risk_label=prediction.risk_label,
+            explanation=prediction.explanation,
+        ),
+        smart_tags=smart_tags,
+        reliability_score=prediction.reliability_score,
+        no_show_risk=prediction.no_show_risk,
+        risk_label=prediction.risk_label,
+        ai_tag=prediction.ai_tag,
+        spend_tag=prediction.spend_tag,
+        sentiment=SentimentResponse(
+            score=prediction.sentiment.score,
+            label=prediction.sentiment.label,
+            emoji=prediction.sentiment.emoji,
+        ),
+        confidence=prediction.confidence,
+        explanation=prediction.explanation,
+        tenant_id=tenant_id,
+        predicted_at=datetime.utcnow().isoformat(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -257,8 +320,9 @@ async def health():
     return {
         "status": "healthy",
         "service": "eMenu Smart Tags - Predictive Intelligence",
-        "version": "2.0.0",
+        "version": "3.0.0",
         "model_loaded": _predictor is not None,
+        "domain_adapter": "restaurant-to-hotel-v1",
     }
 
 
@@ -267,7 +331,11 @@ async def predict_guest_behavior(
     reservation: ReservationInput,
     x_tenant_id: str = Header(default="default", alias="X-Tenant-ID"),
 ):
-    """Predict guest behavior for a single reservation."""
+    """Predict guest behavior for a single reservation.
+
+    Includes domain adaptation (restaurant→hotel scaling), calibrated risk
+    thresholds, smart tag extraction from notes, and explanation generation.
+    """
     try:
         predictor = get_predictor()
 
@@ -286,22 +354,7 @@ async def predict_guest_behavior(
             notes=reservation.notes,
         )
 
-        return PredictionResponse(
-            guest_name=reservation.guest_name,
-            reliability_score=prediction.reliability_score,
-            no_show_risk=prediction.no_show_risk,
-            risk_label=prediction.risk_label,
-            ai_tag=prediction.ai_tag,
-            spend_tag=prediction.spend_tag,
-            sentiment=SentimentResponse(
-                score=prediction.sentiment.score,
-                label=prediction.sentiment.label,
-                emoji=prediction.sentiment.emoji,
-            ),
-            confidence=prediction.confidence,
-            tenant_id=x_tenant_id,
-            predicted_at=datetime.utcnow().isoformat(),
-        )
+        return _build_prediction_response(reservation, prediction, x_tenant_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
@@ -331,22 +384,7 @@ async def predict_batch(
             notes=reservation.notes,
         )
         results.append(
-            PredictionResponse(
-                guest_name=reservation.guest_name,
-                reliability_score=prediction.reliability_score,
-                no_show_risk=prediction.no_show_risk,
-                risk_label=prediction.risk_label,
-                ai_tag=prediction.ai_tag,
-                spend_tag=prediction.spend_tag,
-                sentiment=SentimentResponse(
-                    score=prediction.sentiment.score,
-                    label=prediction.sentiment.label,
-                    emoji=prediction.sentiment.emoji,
-                ),
-                confidence=prediction.confidence,
-                tenant_id=x_tenant_id,
-                predicted_at=datetime.utcnow().isoformat(),
-            )
+            _build_prediction_response(reservation, prediction, x_tenant_id)
         )
 
     return {"predictions": [r.model_dump() for r in results], "count": len(results)}

@@ -7,6 +7,7 @@ import {
   SpendBadge,
   SentimentBadge,
   ConfidenceMeter,
+  NoteSmartTag,
 } from "./SmartTagBadge";
 import {
   X,
@@ -15,7 +16,8 @@ import {
   AlertTriangle,
   TrendingUp,
   Clock,
-  ChevronDown,
+  MessageSquare,
+  Tags,
 } from "lucide-react";
 
 interface Props {
@@ -36,8 +38,8 @@ function useIsMobile() {
 }
 
 function DetailContent({ prediction }: { prediction: GuestPrediction }) {
-  const isHighRisk = prediction.no_show_risk >= 0.6;
-  const isMedRisk = prediction.no_show_risk >= 0.35;
+  const isHighRisk = prediction.no_show_risk >= 0.7;
+  const isMedRisk = prediction.no_show_risk >= 0.4;
   const riskColor = isHighRisk
     ? "text-red-400"
     : isMedRisk
@@ -82,11 +84,37 @@ function DetailContent({ prediction }: { prediction: GuestPrediction }) {
             No-Show Risk
           </div>
           <div className={`text-3xl font-extrabold ${riskColor}`}>
-            {(prediction.no_show_risk * 100).toFixed(1)}
+            {prediction.ai_prediction?.risk_score ?? (prediction.no_show_risk * 100).toFixed(0)}
             <span className="text-sm opacity-60 ml-0.5">%</span>
           </div>
         </div>
       </div>
+
+      {/* Explanation */}
+      {prediction.explanation && (
+        <div className="glass rounded-xl p-3">
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium mb-1">
+            <MessageSquare className="w-3 h-3" />
+            Why this score
+          </div>
+          <p className="text-xs text-slate-300">{prediction.explanation}</p>
+        </div>
+      )}
+
+      {/* Smart Tags from Notes */}
+      {prediction.smart_tags && prediction.smart_tags.length > 0 && (
+        <div>
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium mb-2">
+            <Tags className="w-3 h-3" />
+            Detected Tags
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {prediction.smart_tags.map((tag, i) => (
+              <NoteSmartTag key={`${tag.category}-${tag.label}-${i}`} tag={tag} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tags Row */}
       <div className="flex items-center gap-2 flex-wrap">
