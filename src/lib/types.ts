@@ -58,3 +58,22 @@ export interface SimulatedReservation extends ReservationInput {
   reservation_id: string;
   tenant_id: string;
 }
+
+export interface AIPrediction {
+  risk_score: number;
+  risk_label: string;
+  explanation: string;
+}
+
+export type SmartTagCategory = "Dietary" | "Occasion" | "Seating";
+
+export interface SmartTag {
+  label: string;
+  category: SmartTagCategory;
+  color: string;
+}
+
+export interface PredictionResponseUnified {
+  ai_prediction: AIPrediction;
+  smart_tags: SmartTag[];
+}
