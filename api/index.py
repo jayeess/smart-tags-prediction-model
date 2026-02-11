@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 app = FastAPI(
     title="eMenu Smart Tags - Predictive Intelligence API",
-    version="2.0.0",
+    version="2.0.1",
     description="AI-powered guest behavior prediction and smart tagging for restaurants.",
 )
 
