@@ -9,6 +9,10 @@ import {
   Sparkles,
 } from "lucide-react";
 import { healthCheck } from "../lib/api";
+import GuestCard from "../components/GuestCard";
+import { useMemo } from "react";
+import type { PredictionResponseUnified } from "../lib/types";
+import { fetchGuestPrediction } from "../lib/services/guestService";
 
 interface StatCard {
   label: string;
@@ -19,6 +23,7 @@ interface StatCard {
 
 export default function DashboardPage() {
   const [health, setHealth] = useState<Record<string, unknown> | null>(null);
+  const [prediction, setPrediction] = useState<PredictionResponseUnified | null>(null);
 
   useEffect(() => {
     healthCheck().then(setHealth).catch(() => {});
@@ -137,6 +142,38 @@ export default function DashboardPage() {
           </div>
           <ArrowRight className="w-5 h-5 text-gray-300 group-hover:text-indigo-500 transition-colors" />
         </Link>
+      </div>
+
+      {/* Simulate Guest */}
+      <div className="mt-8">
+        <div className="card p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold">Simulate Guest</h3>
+              <p className="text-sm text-gray-500">Runs a test prediction with vegan birthday notes</p>
+            </div>
+            <button
+              className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+              onClick={async () => {
+                const res = await fetchGuestPrediction({
+                  lead_time: 0,
+                  avg_price: 70,
+                  special_requests: "Vegan birthday, window seat preferred",
+                  party_size: 2,
+                  children: 0,
+                });
+                setPrediction(res);
+              }}
+            >
+              Run
+            </button>
+          </div>
+          {prediction && (
+            <div className="mt-6">
+              <GuestCard data={prediction} />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* API Status */}
