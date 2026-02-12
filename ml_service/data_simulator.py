@@ -47,29 +47,46 @@ class RestaurantDataSimulator:
 
     CHANNELS = ["Online", "Phone", "Walk-in", "App", "Corporate"]
 
+    # Dinner service time slots (weighted toward prime time)
+    _DINNER_SLOTS = [
+        ("18:00", 0.08), ("18:15", 0.06), ("18:30", 0.10), ("18:45", 0.06),
+        ("19:00", 0.14), ("19:15", 0.06), ("19:30", 0.12), ("19:45", 0.04),
+        ("20:00", 0.10), ("20:15", 0.04), ("20:30", 0.08), ("20:45", 0.02),
+        ("21:00", 0.06), ("21:30", 0.04),
+    ]
+
     @classmethod
     def generate(
         cls,
         n: int = 500,
         tenant_id: str = "restaurant_001",
-        seed: Optional[int] = 42,
+        seed: Optional[int] = None,
     ) -> pd.DataFrame:
-        """Generate n synthetic restaurant reservations.
+        """Generate n synthetic restaurant reservations for tonight.
 
         Args:
             n: Number of reservations to generate.
             tenant_id: Restaurant/tenant identifier for isolation.
-            seed: Random seed for reproducibility.
+            seed: Random seed (None = random each time).
 
         Returns:
-            DataFrame with restaurant reservation fields.
+            DataFrame with restaurant reservation fields, all dated today.
         """
         if seed is not None:
             random.seed(seed)
             np.random.seed(seed)
 
         records = []
-        base_date = datetime(2026, 1, 1)
+        today = datetime.now()
+        today_str = today.strftime("%Y-%m-%d")
+
+        # Pre-compute time slot distribution
+        slots = [s[0] for s in cls._DINNER_SLOTS]
+        slot_weights = [s[1] for s in cls._DINNER_SLOTS]
+
+        # Assign tables: distribute across available tables
+        table_pool = list(range(1, max(n + 5, 25)))
+        random.shuffle(table_pool)
 
         for i in range(n):
             # Party composition
@@ -78,17 +95,14 @@ class RestaurantDataSimulator:
             party_size = adults + children
 
             # Booking characteristics
-            advance_days = int(np.random.exponential(scale=7))
+            advance_days = int(np.random.exponential(scale=5))
             is_repeat = random.random() < 0.25
-            prev_cancellations = np.random.choice([0, 0, 0, 0, 1, 1, 2, 3])
-            prev_completions = np.random.poisson(3) if is_repeat else 0
+            prev_cancellations = np.random.choice([0, 0, 0, 0, 0, 1, 1, 2, 3, 5])
+            prev_completions = np.random.poisson(4) if is_repeat else 0
 
             # Spend estimation (per cover)
             base_spend = np.random.lognormal(mean=4.0, sigma=0.5)
             spend_per_cover = round(min(max(base_spend, 15.0), 500.0), 2)
-
-            # Reservation date
-            res_date = base_date + timedelta(days=random.randint(0, 365))
 
             # Special requests
             special_count = np.random.choice([0, 0, 0, 1, 1, 2, 2, 3])
@@ -103,6 +117,9 @@ class RestaurantDataSimulator:
             # Guest name
             guest_name = f"{random.choice(cls.FIRST_NAMES)} {random.choice(cls.LAST_NAMES)}"
 
+            # Dinner time slot (weighted toward prime time 7-8pm)
+            res_time = np.random.choice(slots, p=slot_weights)
+
             records.append({
                 "reservation_id": f"RES-{tenant_id[-3:]}-{i+1:05d}",
                 "tenant_id": tenant_id,
@@ -111,8 +128,8 @@ class RestaurantDataSimulator:
                 "adults": int(adults),
                 "children": int(children),
                 "booking_advance_days": advance_days,
-                "reservation_date": res_date.strftime("%Y-%m-%d"),
-                "reservation_time": f"{random.choice(range(11, 22))}:{random.choice(['00', '15', '30', '45'])}",
+                "reservation_date": today_str,
+                "reservation_time": res_time,
                 "estimated_spend_per_cover": spend_per_cover,
                 "is_repeat_guest": is_repeat,
                 "previous_cancellations": int(prev_cancellations),
@@ -120,7 +137,10 @@ class RestaurantDataSimulator:
                 "special_needs_count": int(special_count),
                 "notes": note,
                 "booking_channel": channel,
-                "table_number": random.randint(1, 30),
+                "table_number": table_pool[i % len(table_pool)],
             })
 
-        return pd.DataFrame(records)
+        # Sort by reservation time for natural ordering
+        df = pd.DataFrame(records)
+        df = df.sort_values("reservation_time").reset_index(drop=True)
+        return df
