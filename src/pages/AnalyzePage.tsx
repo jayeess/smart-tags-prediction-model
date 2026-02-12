@@ -7,7 +7,8 @@ import SmartActions from "../components/SmartActions";
 import SimulatorControls from "../components/SimulatorControls";
 import VoiceCommand from "../components/VoiceCommand";
 import { NoteSmartTag, AITagBadge, SpendBadge, SentimentBadge, ConfidenceMeter } from "../components/SmartTagBadge";
-import { Search, Play, Loader2, Zap, MessageSquare, Tags, Mic } from "lucide-react";
+import NumberStepper, { ChannelSelector } from "../components/NumberStepper";
+import { Search, Play, Loader2, Zap, MessageSquare, Tags, Mic, Users, Baby, Sparkles, XCircle, CheckCircle2 } from "lucide-react";
 
 const EMPTY_FORM: ReservationInput = {
   guest_name: "",
@@ -167,8 +168,9 @@ export default function AnalyzePage() {
           transition={{ delay: 0.15 }}
           className="md:col-span-5 glass p-6"
         >
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
+          <div className="space-y-4">
+            {/* Guest Name */}
+            <div>
               <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Guest Name</label>
               <input
                 type="text"
@@ -179,40 +181,74 @@ export default function AnalyzePage() {
               />
             </div>
 
-            <div>
-              <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Party Size</label>
-              <input type="number" min={1} max={20} value={form.party_size} onChange={(e) => update("party_size", Number(e.target.value))} className="input-dark" />
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Children</label>
-              <input type="number" min={0} max={10} value={form.children} onChange={(e) => update("children", Number(e.target.value))} className="input-dark" />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Special Requests</label>
-              <input type="number" min={0} value={form.special_needs_count} onChange={(e) => update("special_needs_count", Number(e.target.value))} className="input-dark" />
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Channel</label>
-              <select value={form.booking_channel} onChange={(e) => update("booking_channel", e.target.value)} className="input-dark">
-                <option>Online</option>
-                <option>Phone</option>
-                <option>Walk-in</option>
-                <option>App</option>
-                <option>Corporate</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Prev. Cancellations</label>
-              <input type="number" min={0} value={form.previous_cancellations} onChange={(e) => update("previous_cancellations", Number(e.target.value))} className="input-dark" />
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Prev. Completions</label>
-              <input type="number" min={0} value={form.previous_completions} onChange={(e) => update("previous_completions", Number(e.target.value))} className="input-dark" />
+            {/* Party Size + Children — steppers with presets */}
+            <div className="grid grid-cols-2 gap-3">
+              <NumberStepper
+                label="Party Size"
+                icon={<Users className="w-3 h-3" />}
+                value={form.party_size}
+                onChange={(v) => update("party_size", v)}
+                min={1}
+                max={20}
+                presets={[1, 2, 4, 6, 8]}
+                accentColor="indigo"
+              />
+              <NumberStepper
+                label="Children"
+                icon={<Baby className="w-3 h-3" />}
+                value={form.children}
+                onChange={(v) => update("children", v)}
+                min={0}
+                max={10}
+                presets={[0, 1, 2, 3]}
+                accentColor="violet"
+              />
             </div>
 
-            <div className="col-span-2 flex items-center gap-3">
+            {/* Special Requests */}
+            <NumberStepper
+              label="Special Requests"
+              icon={<Sparkles className="w-3 h-3" />}
+              value={form.special_needs_count}
+              onChange={(v) => update("special_needs_count", v)}
+              min={0}
+              max={10}
+              presets={[0, 1, 2, 3, 5]}
+              accentColor="amber"
+            />
+
+            {/* Channel Selector */}
+            <ChannelSelector
+              value={form.booking_channel}
+              onChange={(v) => update("booking_channel", v)}
+            />
+
+            {/* Cancellations + Completions */}
+            <div className="grid grid-cols-2 gap-3">
+              <NumberStepper
+                label="Prev. Cancellations"
+                icon={<XCircle className="w-3 h-3" />}
+                value={form.previous_cancellations}
+                onChange={(v) => update("previous_cancellations", v)}
+                min={0}
+                max={20}
+                presets={[0, 1, 3, 5]}
+                accentColor="red"
+              />
+              <NumberStepper
+                label="Prev. Completions"
+                icon={<CheckCircle2 className="w-3 h-3" />}
+                value={form.previous_completions}
+                onChange={(v) => update("previous_completions", v)}
+                min={0}
+                max={50}
+                presets={[0, 2, 5, 10]}
+                accentColor="emerald"
+              />
+            </div>
+
+            {/* Repeat Guest Toggle */}
+            <div className="flex items-center gap-3">
               <label className="flex items-center gap-2.5 cursor-pointer">
                 <div className="relative">
                   <input type="checkbox" checked={form.is_repeat_guest} onChange={(e) => update("is_repeat_guest", e.target.checked)} className="sr-only peer" />
@@ -223,7 +259,8 @@ export default function AnalyzePage() {
               </label>
             </div>
 
-            <div className="col-span-2">
+            {/* Notes */}
+            <div>
               <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Notes</label>
               <textarea
                 value={form.notes}
