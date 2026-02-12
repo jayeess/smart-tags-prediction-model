@@ -105,24 +105,60 @@ def _heuristic_reliability(
     previous_completions: int,
     is_repeat_guest: bool,
     estimated_spend_per_cover: float,
+    party_size: int = 2,
 ) -> float:
-    """Rule-based fallback when the ANN model is unavailable."""
+    """Rule-based reliability score tuned for restaurant domain.
+
+    This captures risk factors the hotel ANN model doesn't respond to
+    well in the restaurant context. It is blended with the ANN output
+    to produce a calibrated final score.
+    """
     score = 0.65
 
+    # Repeat / loyalty boost
     if is_repeat_guest:
         score += 0.10
-    if previous_completions >= 3:
-        score += 0.10
-    if previous_cancellations >= 2:
-        score -= 0.25
+    if previous_completions >= 5:
+        score += 0.12
+    elif previous_completions >= 3:
+        score += 0.08
+    elif previous_completions >= 1:
+        score += 0.03
+
+    # Cancellation history penalty (strongest signal for no-show risk)
+    if previous_cancellations >= 5:
+        score -= 0.45
+    elif previous_cancellations >= 3:
+        score -= 0.30
+    elif previous_cancellations >= 2:
+        score -= 0.20
     elif previous_cancellations == 1:
         score -= 0.10
-    if booking_advance_days > 30:
-        score -= 0.05
-    if estimated_spend_per_cover >= 150:
-        score += 0.05
 
-    return round(max(0.0, min(1.0, score)), 3)
+    # Lead time: very long advance bookings are riskier
+    if booking_advance_days >= 30:
+        score -= 0.10
+    elif booking_advance_days >= 14:
+        score -= 0.05
+    # Same-day walk-ins are slightly risky (impulsive)
+    elif booking_advance_days == 0:
+        score -= 0.03
+
+    # Spend: higher spend = more committed
+    if estimated_spend_per_cover >= 150:
+        score += 0.08
+    elif estimated_spend_per_cover >= 80:
+        score += 0.03
+    elif estimated_spend_per_cover < 40:
+        score -= 0.05
+
+    # Large parties slightly riskier (harder to coordinate)
+    if party_size >= 8:
+        score -= 0.05
+    elif party_size >= 6:
+        score -= 0.02
+
+    return round(max(0.05, min(0.98, score)), 3)
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +253,13 @@ class GuestBehaviorPredictor:
             logger.warning(f"ANN model unavailable, using heuristic fallback: {e}")
             self._model_available = False
 
+    # Blending weights: how much the heuristic vs ANN contributes.
+    # The hotel ANN is weak on restaurant-domain risk factors, so we
+    # weight the heuristic heavily to ensure the score reflects the
+    # factors shown in the explanation.
+    _ANN_WEIGHT = 0.20
+    _HEURISTIC_WEIGHT = 0.80
+
     def predict(
         self,
         tenant_id: str,
@@ -232,8 +275,23 @@ class GuestBehaviorPredictor:
         booking_channel: str = "Online",
         notes: str = "",
     ) -> GuestPrediction:
-        """Generate a full guest behavior prediction with domain adaptation."""
+        """Generate a full guest behavior prediction with domain adaptation.
+
+        The final score blends the ANN model output with a restaurant-tuned
+        heuristic so that risk factors (cancel history, lead time, spend)
+        are properly reflected in the displayed score.
+        """
         self._ensure_loaded()
+
+        # Always compute the heuristic score (restaurant-domain tuned)
+        heuristic_reliability = _heuristic_reliability(
+            booking_advance_days=booking_advance_days,
+            previous_cancellations=previous_cancellations,
+            previous_completions=previous_completions,
+            is_repeat_guest=is_repeat_guest,
+            estimated_spend_per_cover=estimated_spend_per_cover,
+            party_size=party_size,
+        )
 
         if self._model_available:
             from .data_mapper import RestaurantToHotelMapper
@@ -253,17 +311,20 @@ class GuestBehaviorPredictor:
 
             X = self._preprocessor.transform(feature_df)
             raw_prediction = self._model.predict(X, verbose=0)
-            reliability_score = float(raw_prediction[0][0])
-            confidence = round(abs(reliability_score - 0.5) * 2, 3)
-        else:
-            reliability_score = _heuristic_reliability(
-                booking_advance_days=booking_advance_days,
-                previous_cancellations=previous_cancellations,
-                previous_completions=previous_completions,
-                is_repeat_guest=is_repeat_guest,
-                estimated_spend_per_cover=estimated_spend_per_cover,
+            ann_reliability = float(raw_prediction[0][0])
+
+            # Blend ANN with heuristic for calibrated output
+            reliability_score = (
+                self._ANN_WEIGHT * ann_reliability
+                + self._HEURISTIC_WEIGHT * heuristic_reliability
             )
-            confidence = 0.55  # lower confidence for heuristic
+
+            # Confidence: high when ANN and heuristic agree, lower when they diverge
+            agreement = 1.0 - abs(ann_reliability - heuristic_reliability)
+            confidence = round(0.5 + agreement * 0.4, 3)  # range 0.5 – 0.9
+        else:
+            reliability_score = heuristic_reliability
+            confidence = 0.55  # lower confidence for heuristic-only
 
         no_show_risk = round(1.0 - reliability_score, 3)
         reliability_score = round(reliability_score, 3)
