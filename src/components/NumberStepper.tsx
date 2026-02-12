@@ -8,8 +8,6 @@ interface StepperProps {
   max?: number;
   label: string;
   icon?: React.ReactNode;
-  /** Quick-pick presets shown as chips below */
-  presets?: number[];
   /** Format the display value */
   format?: (v: number) => string;
   accentColor?: string;
@@ -22,7 +20,6 @@ export default function NumberStepper({
   max = 99,
   label,
   icon,
-  presets,
   format,
   accentColor = "indigo",
 }: StepperProps) {
@@ -85,27 +82,6 @@ export default function NumberStepper({
           <Plus className="w-3.5 h-3.5 text-slate-400" />
         </motion.button>
       </div>
-
-      {/* Quick-pick presets */}
-      {presets && presets.length > 0 && (
-        <div className="flex items-center gap-1 mt-1.5">
-          {presets.map((p) => (
-            <motion.button
-              key={p}
-              type="button"
-              whileTap={{ scale: 0.9 }}
-              onClick={() => onChange(clamped(p))}
-              className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-all ${
-                value === p
-                  ? `${c.bg} ${c.text} ring-1 ${c.ring} shadow-lg ${c.glow}`
-                  : "bg-white/[0.03] text-slate-600 hover:bg-white/[0.06] hover:text-slate-400"
-              }`}
-            >
-              {format ? format(p) : p}
-            </motion.button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

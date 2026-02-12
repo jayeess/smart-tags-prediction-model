@@ -181,7 +181,7 @@ export default function AnalyzePage() {
               />
             </div>
 
-            {/* Party Size + Children — steppers with presets */}
+            {/* Party Size + Children */}
             <div className="grid grid-cols-2 gap-3">
               <NumberStepper
                 label="Party Size"
@@ -190,7 +190,6 @@ export default function AnalyzePage() {
                 onChange={(v) => update("party_size", v)}
                 min={1}
                 max={20}
-                presets={[1, 2, 4, 6, 8]}
                 accentColor="indigo"
               />
               <NumberStepper
@@ -200,7 +199,6 @@ export default function AnalyzePage() {
                 onChange={(v) => update("children", v)}
                 min={0}
                 max={10}
-                presets={[0, 1, 2, 3]}
                 accentColor="violet"
               />
             </div>
@@ -213,7 +211,6 @@ export default function AnalyzePage() {
               onChange={(v) => update("special_needs_count", v)}
               min={0}
               max={10}
-              presets={[0, 1, 2, 3, 5]}
               accentColor="amber"
             />
 
@@ -232,7 +229,6 @@ export default function AnalyzePage() {
                 onChange={(v) => update("previous_cancellations", v)}
                 min={0}
                 max={20}
-                presets={[0, 1, 3, 5]}
                 accentColor="red"
               />
               <NumberStepper
@@ -242,7 +238,6 @@ export default function AnalyzePage() {
                 onChange={(v) => update("previous_completions", v)}
                 min={0}
                 max={50}
-                presets={[0, 2, 5, 10]}
                 accentColor="emerald"
               />
             </div>
