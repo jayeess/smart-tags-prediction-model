@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { GuestPrediction, ReservationInput, DemoScenario } from "../lib/types";
 import { predictGuestBehavior, getDemoScenarios } from "../lib/api";
+import { saveAnalysis } from "../lib/historyStore";
 import RiskGauge from "../components/RiskGauge";
 import SmartActions from "../components/SmartActions";
 import SimulatorControls from "../components/SimulatorControls";
@@ -60,6 +61,7 @@ export default function AnalyzePage() {
     try {
       const result = await predictGuestBehavior(form);
       setPrediction(result);
+      saveAnalysis(form, result, "analyze");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Prediction failed");
     } finally {

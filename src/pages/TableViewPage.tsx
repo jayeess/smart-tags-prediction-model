@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { GuestPrediction, SimulatedReservation } from "../lib/types";
 import { simulateReservations, predictBatch, predictGuestBehavior } from "../lib/api";
+import { saveAnalysis } from "../lib/historyStore";
 import GuestInsightCard from "../components/GuestInsightCard";
 import GuestDetailView from "../components/GuestDetailView";
 import SmartActions from "../components/SmartActions";
@@ -74,6 +75,7 @@ export default function TableViewPage() {
       const newMap = new Map<string, GuestPrediction>();
       results.forEach((p: GuestPrediction, i: number) => {
         newMap.set(reservations[i].reservation_id, p);
+        saveAnalysis(reservations[i], p, "tables");
       });
       setPredictions(newMap);
     } finally {
@@ -111,6 +113,7 @@ export default function TableViewPage() {
       setPredictions((prev) =>
         new Map(prev).set(res.reservation_id, prediction)
       );
+      saveAnalysis(res, prediction, "tables");
       setDetailOpen(true);
     } finally {
       setPredicting(null);

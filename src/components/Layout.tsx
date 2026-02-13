@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Search,
   Utensils,
+  Clock,
   Settings,
   Brain,
 } from "lucide-react";
@@ -12,6 +13,7 @@ const NAV_ITEMS = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/analyze", icon: Search, label: "Analyze" },
   { to: "/tables", icon: Utensils, label: "Tables" },
+  { to: "/history", icon: Clock, label: "History" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
