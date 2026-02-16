@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import type { GuestPrediction, ReservationInput, DemoScenario } from "../lib/types";
 import { predictGuestBehavior, getDemoScenarios } from "../lib/api";
@@ -9,7 +10,7 @@ import SimulatorControls from "../components/SimulatorControls";
 import VoiceCommand from "../components/VoiceCommand";
 import { NoteSmartTag, AITagBadge, SpendBadge, SentimentBadge, ConfidenceMeter } from "../components/SmartTagBadge";
 import NumberStepper, { ChannelSelector } from "../components/NumberStepper";
-import { Search, Play, Loader2, Zap, MessageSquare, Tags, Mic, Users, Baby, Sparkles, XCircle, CheckCircle2 } from "lucide-react";
+import { Search, Play, Loader2, Zap, MessageSquare, Tags, Mic, Users, Baby, Sparkles, XCircle, CheckCircle2, Clock, Check } from "lucide-react";
 
 const EMPTY_FORM: ReservationInput = {
   guest_name: "",
@@ -33,6 +34,12 @@ export default function AnalyzePage() {
   const [demos, setDemos] = useState<DemoScenario[]>([]);
   const [error, setError] = useState("");
   const [showVoice, setShowVoice] = useState(false);
+  const [savedToast, setSavedToast] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    return () => { if (toastTimer.current) clearTimeout(toastTimer.current); };
+  }, []);
 
   const update = (field: keyof ReservationInput, value: unknown) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -62,6 +69,9 @@ export default function AnalyzePage() {
       const result = await predictGuestBehavior(form);
       setPrediction(result);
       saveAnalysis(form, result, "analyze");
+      setSavedToast(true);
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+      toastTimer.current = setTimeout(() => setSavedToast(false), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Prediction failed");
     } finally {
@@ -378,6 +388,30 @@ export default function AnalyzePage() {
                 <div className="glass p-5">
                   <SmartActions prediction={prediction} />
                 </div>
+
+                {/* Saved to History Toast */}
+                <AnimatePresence>
+                  {savedToast && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      className="glass p-3 flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2 text-xs text-emerald-400">
+                        <Check className="w-3.5 h-3.5" />
+                        Saved to history
+                      </div>
+                      <Link
+                        to="/history"
+                        className="text-[10px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                      >
+                        <Clock className="w-3 h-3" />
+                        View History
+                      </Link>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </motion.div>
             ) : (
               <motion.div

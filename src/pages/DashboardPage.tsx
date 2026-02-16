@@ -254,29 +254,43 @@ export default function DashboardPage() {
         </motion.div>
 
         {/* ---- Row 4: Navigation Links ---- */}
-        <motion.div variants={item} className="md:col-span-6">
+        <motion.div variants={item} className="md:col-span-4">
           <Link
             to="/analyze"
             className="glass glass-hover p-5 flex items-center justify-between group block"
           >
             <div>
-              <h3 className="font-semibold text-sm text-white">Analyze a Reservation</h3>
+              <h3 className="font-semibold text-sm text-white">Analyze</h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Full form with Time-Travel Simulator
+                Full prediction form
               </p>
             </div>
             <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-indigo-400 transition-colors" />
           </Link>
         </motion.div>
-        <motion.div variants={item} className="md:col-span-6">
+        <motion.div variants={item} className="md:col-span-4">
           <Link
             to="/tables"
             className="glass glass-hover p-5 flex items-center justify-between group block"
           >
             <div>
-              <h3 className="font-semibold text-sm text-white">Table View</h3>
+              <h3 className="font-semibold text-sm text-white">Tables</h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Tonight's reservations with batch predictions
+                Tonight's service
+              </p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-indigo-400 transition-colors" />
+          </Link>
+        </motion.div>
+        <motion.div variants={item} className="md:col-span-4">
+          <Link
+            to="/history"
+            className="glass glass-hover p-5 flex items-center justify-between group block"
+          >
+            <div>
+              <h3 className="font-semibold text-sm text-white">History</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Past analyses & export
               </p>
             </div>
             <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-indigo-400 transition-colors" />
