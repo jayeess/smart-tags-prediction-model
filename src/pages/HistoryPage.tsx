@@ -9,11 +9,17 @@ import {
   Download,
   AlertTriangle,
   SearchX,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  HardDrive,
 } from "lucide-react";
 import {
   getHistory,
   clearHistory,
   deleteRecord,
+  fetchCloudHistory,
+  getCloudStatus,
   type AnalysisRecord,
 } from "../lib/historyStore";
 import {
@@ -373,6 +379,8 @@ function HistoryRow({
 
 /* ─── Main Page ──────────────────────────────────────── */
 
+type SyncStatus = "local" | "syncing" | "synced" | "offline";
+
 export default function HistoryPage() {
   const [records, setRecords] = useState<AnalysisRecord[]>([]);
   const [filter, setFilter] = useState<"all" | "high" | "medium" | "low">(
@@ -380,10 +388,48 @@ export default function HistoryPage() {
   );
   const [search, setSearch] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("local");
+  const [cloudCount, setCloudCount] = useState(0);
 
+  // Load localStorage instantly, then try cloud merge
   useEffect(() => {
     setRecords(getHistory());
+
+    // Attempt cloud sync in background
+    (async () => {
+      const status = await getCloudStatus();
+      if (!status.configured) {
+        setSyncStatus("local");
+        return;
+      }
+      if (!status.connected) {
+        setSyncStatus("offline");
+        return;
+      }
+      setCloudCount(status.cloudCount);
+      setSyncStatus("syncing");
+      try {
+        const merged = await fetchCloudHistory();
+        setRecords(merged);
+        setSyncStatus("synced");
+      } catch {
+        setSyncStatus("offline");
+      }
+    })();
   }, []);
+
+  const handleRefreshCloud = async () => {
+    setSyncStatus("syncing");
+    try {
+      const merged = await fetchCloudHistory();
+      setRecords(merged);
+      const status = await getCloudStatus();
+      setCloudCount(status.cloudCount);
+      setSyncStatus("synced");
+    } catch {
+      setSyncStatus("offline");
+    }
+  };
 
   const handleDelete = (id: string) => {
     deleteRecord(id);
@@ -466,14 +512,59 @@ export default function HistoryPage() {
         animate={{ opacity: 1, y: 0 }}
         className="mb-6"
       >
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Clock className="w-6 h-6 text-indigo-400" />
-          Analysis History
-        </h1>
-        <p className="text-slate-500 text-sm mt-1">
-          {records.length} past{" "}
-          {records.length === 1 ? "analysis" : "analyses"} stored locally
-        </p>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+              <Clock className="w-6 h-6 text-indigo-400" />
+              Analysis History
+            </h1>
+            <p className="text-slate-500 text-sm mt-1">
+              {records.length} past{" "}
+              {records.length === 1 ? "analysis" : "analyses"}
+            </p>
+          </div>
+
+          {/* Sync Status Badge */}
+          <div className="flex items-center gap-2">
+            {syncStatus === "synced" && (
+              <button
+                onClick={handleRefreshCloud}
+                className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+                title="Refresh from cloud"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
+              </button>
+            )}
+            <div
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-semibold border ${
+                syncStatus === "synced"
+                  ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                  : syncStatus === "syncing"
+                  ? "text-indigo-400 bg-indigo-500/10 border-indigo-500/20"
+                  : syncStatus === "offline"
+                  ? "text-red-400 bg-red-500/10 border-red-500/20"
+                  : "text-slate-500 bg-white/5 border-white/10"
+              }`}
+            >
+              {syncStatus === "synced" ? (
+                <Cloud className="w-3 h-3" />
+              ) : syncStatus === "syncing" ? (
+                <RefreshCw className="w-3 h-3 animate-spin" />
+              ) : syncStatus === "offline" ? (
+                <CloudOff className="w-3 h-3" />
+              ) : (
+                <HardDrive className="w-3 h-3" />
+              )}
+              {syncStatus === "synced"
+                ? `Cloud Synced (${cloudCount})`
+                : syncStatus === "syncing"
+                ? "Syncing..."
+                : syncStatus === "offline"
+                ? "Cloud Offline"
+                : "Local Only"}
+            </div>
+          </div>
+        </div>
       </motion.div>
 
       {records.length > 0 && (
