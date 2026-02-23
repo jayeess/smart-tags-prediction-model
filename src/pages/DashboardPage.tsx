@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { lazy, Suspense, useEffect, useState, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -21,7 +21,9 @@ import RiskGauge from "../components/RiskGauge";
 import SmartActions from "../components/SmartActions";
 import VoiceCommand from "../components/VoiceCommand";
 import { NoteSmartTag, AITagBadge, SentimentBadge, SpendBadge, ConfidenceMeter } from "../components/SmartTagBadge";
-import { getHistory } from "../lib/historyStore";
+import { getHistory, type AnalysisRecord } from "../lib/historyStore";
+
+const AnalyticsPanel = lazy(() => import("../components/AnalyticsCharts"));
 
 /* ── Greeting based on time of day ─────────────────────── */
 function getGreeting(): string {
@@ -72,7 +74,7 @@ function useHistoryStats() {
     const highRiskCount = records.filter(
       (r) => r.prediction.risk_label === "High Risk"
     ).length;
-    return { total: records.length, todayCount, highRiskCount };
+    return { total: records.length, todayCount, highRiskCount, records };
   }, []);
 }
 
@@ -436,7 +438,19 @@ export default function DashboardPage() {
           />
         </motion.div>
 
-        {/* ─── Row 4: Quick Navigation Cards ─── */}
+        {/* ─── Row 4: Analytics Charts (lazy-loaded with recharts) ─── */}
+        {stats.records.length > 0 && (
+          <Suspense fallback={
+            <motion.div variants={item} className="md:col-span-12 glass p-8 flex items-center justify-center">
+              <Activity className="w-5 h-5 text-indigo-400 animate-pulse mr-2" />
+              <span className="text-sm text-slate-500">Loading analytics...</span>
+            </motion.div>
+          }>
+            <AnalyticsPanel records={stats.records as AnalysisRecord[]} />
+          </Suspense>
+        )}
+
+        {/* ─── Row 5: Quick Navigation Cards ─── */}
         {[
           {
             to: "/analyze",

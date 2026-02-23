@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { lazy, Suspense, useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -29,6 +29,10 @@ import {
   SentimentBadge,
 } from "../components/SmartTagBadge";
 import RiskGauge from "../components/RiskGauge";
+import { useToast } from "../components/ToastProvider";
+
+const RiskDonutChart = lazy(() => import("../components/AnalyticsCharts").then(m => ({ default: m.RiskDonutChart })));
+const AnalysisTrendChart = lazy(() => import("../components/AnalyticsCharts").then(m => ({ default: m.AnalysisTrendChart })));
 
 /* ─── Helpers ───────────────────────────────────────────── */
 
@@ -382,6 +386,7 @@ function HistoryRow({
 type SyncStatus = "local" | "syncing" | "synced" | "offline";
 
 export default function HistoryPage() {
+  const { toast } = useToast();
   const [records, setRecords] = useState<AnalysisRecord[]>([]);
   const [filter, setFilter] = useState<"all" | "high" | "medium" | "low">(
     "all"
@@ -426,14 +431,17 @@ export default function HistoryPage() {
       const status = await getCloudStatus();
       setCloudCount(status.cloudCount);
       setSyncStatus("synced");
+      toast(`Cloud sync complete: ${status.cloudCount} records`, "success");
     } catch {
       setSyncStatus("offline");
+      toast("Cloud sync failed", "error");
     }
   };
 
   const handleDelete = (id: string) => {
     deleteRecord(id);
     setRecords((prev) => prev.filter((r) => r.id !== id));
+    toast("Record removed", "info");
   };
 
   const handleClearAll = () => {
@@ -445,6 +453,7 @@ export default function HistoryPage() {
     clearHistory();
     setRecords([]);
     setConfirmClear(false);
+    toast("All history cleared", "info");
   };
 
   // Stats
@@ -629,6 +638,28 @@ export default function HistoryPage() {
             </div>
           </div>
 
+          {/* Analytics Charts */}
+          {records.length >= 3 && (
+            <Suspense fallback={
+              <div className="glass p-8 text-center text-sm text-slate-500">Loading charts...</div>
+            }>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="glass p-4">
+                  <div className="text-[10px] text-slate-500 font-medium uppercase tracking-wider mb-2">
+                    Risk Breakdown
+                  </div>
+                  <RiskDonutChart records={records} />
+                </div>
+                <div className="glass p-4">
+                  <div className="text-[10px] text-slate-500 font-medium uppercase tracking-wider mb-2">
+                    7-Day Trend
+                  </div>
+                  <AnalysisTrendChart records={records} />
+                </div>
+              </div>
+            </Suspense>
+          )}
+
           {/* Filters + Search + Actions */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div className="flex items-center gap-2 flex-wrap">
@@ -693,7 +724,7 @@ export default function HistoryPage() {
 
               {/* Export */}
               <button
-                onClick={() => exportCSV(records)}
+                onClick={() => { exportCSV(records); toast(`Exported ${records.length} records as CSV`, "success"); }}
                 className="p-1.5 rounded-lg bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] transition-colors"
                 title="Export as CSV"
               >

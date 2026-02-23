@@ -58,10 +58,19 @@ export default function Layout() {
           ))}
         </nav>
 
-        <div className="p-4 mx-3 mb-3 glass rounded-xl">
-          <div className="text-[11px] text-slate-500 font-medium">Tenant</div>
-          <div className="text-xs text-indigo-400 font-semibold mt-0.5">
-            restaurant_001
+        <div className="p-4 mx-3 mb-3 space-y-2">
+          <div className="glass rounded-xl p-3">
+            <div className="text-[11px] text-slate-500 font-medium">Tenant</div>
+            <div className="text-xs text-indigo-400 font-semibold mt-0.5">
+              restaurant_001
+            </div>
+          </div>
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[10px] text-slate-600">v1.0.0</span>
+            <span className="text-[10px] text-emerald-500 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live
+            </span>
           </div>
         </div>
       </aside>

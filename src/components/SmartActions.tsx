@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import type { GuestPrediction } from "../lib/types";
+import { useToast } from "./ToastProvider";
 import {
   ShieldAlert,
   Cake,
@@ -107,6 +108,7 @@ interface Props {
 }
 
 export default function SmartActions({ prediction }: Props) {
+  const { toast } = useToast();
   const actions = deriveActions(prediction);
 
   const container = {
@@ -145,8 +147,7 @@ export default function SmartActions({ prediction }: Props) {
               active:shadow-md
             `}
             onClick={() => {
-              // In production this would trigger an action
-              alert(`Action triggered: ${action.label}`);
+              toast(`Action triggered: ${action.label}`, "success");
             }}
           >
             {action.icon}

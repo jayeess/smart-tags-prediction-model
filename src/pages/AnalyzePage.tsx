@@ -10,6 +10,7 @@ import SimulatorControls from "../components/SimulatorControls";
 import VoiceCommand from "../components/VoiceCommand";
 import { NoteSmartTag, AITagBadge, SpendBadge, SentimentBadge, ConfidenceMeter } from "../components/SmartTagBadge";
 import NumberStepper, { ChannelSelector } from "../components/NumberStepper";
+import { useToast } from "../components/ToastProvider";
 import { Search, Play, Loader2, Zap, MessageSquare, Tags, Mic, Users, Baby, Sparkles, XCircle, CheckCircle2, Clock, Check } from "lucide-react";
 
 const EMPTY_FORM: ReservationInput = {
@@ -34,6 +35,7 @@ export default function AnalyzePage() {
   const [demos, setDemos] = useState<DemoScenario[]>([]);
   const [error, setError] = useState("");
   const [showVoice, setShowVoice] = useState(false);
+  const { toast } = useToast();
   const [savedToast, setSavedToast] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
 
@@ -69,6 +71,7 @@ export default function AnalyzePage() {
       const result = await predictGuestBehavior(form);
       setPrediction(result);
       saveAnalysis(form, result, "analyze");
+      toast(`Analysis complete: ${result.risk_label} (${result.ai_prediction?.risk_score ?? Math.round(result.no_show_risk * 100)}%)`, result.risk_label === "High Risk" ? "error" : "success");
       setSavedToast(true);
       if (toastTimer.current) clearTimeout(toastTimer.current);
       toastTimer.current = setTimeout(() => setSavedToast(false), 3000);

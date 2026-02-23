@@ -7,6 +7,7 @@ import GuestInsightCard from "../components/GuestInsightCard";
 import GuestDetailView from "../components/GuestDetailView";
 import SmartActions from "../components/SmartActions";
 import RiskGauge from "../components/RiskGauge";
+import { useToast } from "../components/ToastProvider";
 import {
   Utensils,
   RefreshCw,
@@ -31,6 +32,7 @@ function formatTonight(): string {
 }
 
 export default function TableViewPage() {
+  const { toast } = useToast();
   const [reservations, setReservations] = useState<SimulatedReservation[]>([]);
   const [predictions, setPredictions] = useState<Map<string, GuestPrediction>>(
     new Map()
@@ -48,6 +50,7 @@ export default function TableViewPage() {
       setReservations(data);
       setPredictions(new Map());
       setSelectedId(null);
+      toast(`Loaded ${data.length} reservations for tonight`, "info");
     } finally {
       setLoading(false);
     }
@@ -73,11 +76,17 @@ export default function TableViewPage() {
       }));
       const { predictions: results } = await predictBatch(inputs);
       const newMap = new Map<string, GuestPrediction>();
+      let highCount = 0;
       results.forEach((p: GuestPrediction, i: number) => {
         newMap.set(reservations[i].reservation_id, p);
         saveAnalysis(reservations[i], p, "tables");
+        if (p.risk_label === "High Risk") highCount++;
       });
       setPredictions(newMap);
+      toast(
+        `Batch analysis complete: ${highCount} high risk out of ${results.length}`,
+        highCount > 0 ? "error" : "success"
+      );
     } finally {
       setBatchLoading(false);
     }
