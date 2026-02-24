@@ -13,6 +13,9 @@ import {
   CloudOff,
   RefreshCw,
   HardDrive,
+  CheckCircle2,
+  XCircle,
+  Ban,
 } from "lucide-react";
 import {
   getHistory,
@@ -20,8 +23,13 @@ import {
   deleteRecord,
   fetchCloudHistory,
   getCloudStatus,
+  hasFeedback,
+  getRecordFeedback,
+  saveFeedback,
   type AnalysisRecord,
+  type FeedbackOutcome,
 } from "../lib/historyStore";
+import { submitFeedback } from "../lib/api";
 import {
   NoteSmartTag,
   AITagBadge,
@@ -121,13 +129,17 @@ function exportCSV(records: AnalysisRecord[]) {
 function HistoryRow({
   record,
   onDelete,
+  onFeedback,
 }: {
   record: AnalysisRecord;
   onDelete: (id: string) => void;
+  onFeedback: (id: string, outcome: FeedbackOutcome) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { prediction, input } = record;
   const riskScore = safeRiskScore(prediction);
+  const feedback = getRecordFeedback(record.id);
+  const feedbackGiven = !!feedback;
 
   return (
     <motion.div
@@ -180,6 +192,22 @@ function HistoryRow({
             )}
           </div>
         </div>
+
+        {/* Feedback indicator */}
+        {feedbackGiven && (
+          <span
+            className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-md ${
+              feedback.outcome === "showed_up"
+                ? "text-emerald-400 bg-emerald-500/10"
+                : feedback.outcome === "no_show"
+                ? "text-red-400 bg-red-500/10"
+                : "text-amber-400 bg-amber-500/10"
+            }`}
+            title={`Outcome: ${feedback.outcome.replace("_", " ")}`}
+          >
+            {feedback.outcome === "showed_up" ? "Showed" : feedback.outcome === "no_show" ? "No-Show" : "Cancelled"}
+          </span>
+        )}
 
         {/* Risk badge */}
         <span
@@ -360,8 +388,73 @@ function HistoryRow({
                 </div>
               </div>
 
+              {/* Feedback Loop: Did they show up? */}
+              <div className="mt-3 pt-3 border-t border-white/5">
+                {feedbackGiven ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-500">Outcome:</span>
+                    <span
+                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg border ${
+                        feedback.outcome === "showed_up"
+                          ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                          : feedback.outcome === "no_show"
+                          ? "text-red-400 bg-red-500/10 border-red-500/20"
+                          : "text-amber-400 bg-amber-500/10 border-amber-500/20"
+                      }`}
+                    >
+                      {feedback.outcome === "showed_up"
+                        ? "Showed Up"
+                        : feedback.outcome === "no_show"
+                        ? "No-Show"
+                        : "Cancelled"}
+                    </span>
+                    <span className="text-[10px] text-slate-600">
+                      Drift: {Math.round(feedback.drift * 100)}%
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      Did they show up?
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onFeedback(record.id, "showed_up");
+                        }}
+                        className="text-[10px] flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500/20 bg-emerald-500/5 text-emerald-400 hover:bg-emerald-500/15 transition-colors"
+                      >
+                        <CheckCircle2 className="w-3 h-3" />
+                        Yes
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onFeedback(record.id, "no_show");
+                        }}
+                        className="text-[10px] flex items-center gap-1 px-2 py-1 rounded-lg border border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/15 transition-colors"
+                      >
+                        <XCircle className="w-3 h-3" />
+                        No-Show
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onFeedback(record.id, "cancelled");
+                        }}
+                        className="text-[10px] flex items-center gap-1 px-2 py-1 rounded-lg border border-amber-500/20 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 transition-colors"
+                      >
+                        <Ban className="w-3 h-3" />
+                        Cancelled
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Delete button */}
-              <div className="flex justify-end mt-3 pt-3 border-t border-white/5">
+              <div className="flex justify-end mt-2 pt-2 border-t border-white/5">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -436,6 +529,50 @@ export default function HistoryPage() {
       setSyncStatus("offline");
       toast("Cloud sync failed", "error");
     }
+  };
+
+  const [feedbackCount, setFeedbackCount] = useState(0);
+
+  // Count existing feedback on load
+  useEffect(() => {
+    const count = records.filter((r) => hasFeedback(r.id)).length;
+    setFeedbackCount(count);
+  }, [records]);
+
+  const handleFeedback = async (recordId: string, outcome: FeedbackOutcome) => {
+    const record = records.find((r) => r.id === recordId);
+    if (!record) return;
+
+    const predictedRisk = record.prediction.no_show_risk ?? 0;
+    const actualNoShow = outcome === "showed_up" ? 0.0 : 1.0;
+    const drift = Math.abs(predictedRisk - actualNoShow);
+
+    // Save locally first (instant)
+    saveFeedback({
+      recordId,
+      outcome,
+      drift,
+      submittedAt: new Date().toISOString(),
+    });
+    setFeedbackCount((c) => c + 1);
+
+    // Send to backend (fire-and-forget)
+    try {
+      await submitFeedback({
+        record_id: recordId,
+        guest_name: record.prediction.guest_name,
+        outcome,
+        predicted_risk: predictedRisk,
+        predicted_label: record.prediction.risk_label,
+      });
+    } catch {
+      // Already saved locally, backend sync is best-effort
+    }
+
+    const outcomeLabel = outcome === "showed_up" ? "Showed Up" : outcome === "no_show" ? "No-Show" : "Cancelled";
+    toast(`Feedback recorded: ${record.prediction.guest_name} - ${outcomeLabel}`, "success");
+    // Force re-render to show feedback state
+    setRecords([...records]);
   };
 
   const handleDelete = (id: string) => {
@@ -530,6 +667,11 @@ export default function HistoryPage() {
             <p className="text-slate-500 text-sm mt-1">
               {records.length} past{" "}
               {records.length === 1 ? "analysis" : "analyses"}
+              {feedbackCount > 0 && (
+                <span className="text-indigo-400/70 ml-2">
+                  ({feedbackCount} with feedback)
+                </span>
+              )}
             </p>
           </div>
 
@@ -818,6 +960,7 @@ export default function HistoryPage() {
                       key={record.id}
                       record={record}
                       onDelete={handleDelete}
+                      onFeedback={handleFeedback}
                     />
                   ))}
                 </AnimatePresence>

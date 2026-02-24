@@ -454,6 +454,7 @@ class GuestBehaviorPredictor:
             is_repeat_guest=is_repeat_guest,
             estimated_spend_per_cover=estimated_spend_per_cover,
             party_size=party_size,
+            reservation_date=reservation_date,
         )
 
         if self._model_available:

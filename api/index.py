@@ -10,10 +10,13 @@ Provides endpoints for:
 All endpoints enforce tenant isolation via tenant_id.
 """
 
+import logging
 import sys
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -108,6 +111,23 @@ class PredictionResponse(BaseModel):
     explanation: str
     tenant_id: str
     predicted_at: str
+
+
+class FeedbackInput(BaseModel):
+    """Outcome feedback for a past prediction — did the guest show up?"""
+    record_id: str = Field(..., description="The analysis record ID")
+    guest_name: str = ""
+    outcome: str = Field(..., description="showed_up | no_show | cancelled")
+    predicted_risk: float = Field(default=0.0, ge=0.0, le=1.0)
+    predicted_label: str = ""
+    notes: str = ""
+
+
+class FeedbackResponse(BaseModel):
+    status: str
+    record_id: str
+    outcome: str
+    drift: float  # difference between prediction and actual outcome
 
 
 class AnalyzeTagsRequest(BaseModel):
@@ -656,3 +676,95 @@ async def simulate_reservations(
 async def get_analysis_history():
     """Placeholder for session-based analysis history."""
     return {"history": [], "message": "History is stored client-side in this version."}
+
+
+# ---------------------------------------------------------------------------
+# Feedback Loop — Collect ground-truth outcomes for model improvement
+# ---------------------------------------------------------------------------
+# In-memory store for feedback (persists per server instance).
+# In production, this would be backed by Supabase/Postgres.
+_feedback_store: list[dict] = []
+
+
+@app.post("/api/v1/feedback", response_model=FeedbackResponse)
+async def submit_feedback(
+    feedback: FeedbackInput,
+    x_tenant_id: str = Header(default="default", alias="X-Tenant-ID"),
+):
+    """Record whether a predicted guest actually showed up.
+
+    This closes the feedback loop: the system learns how accurate
+    its predictions were, enabling drift detection and future retraining.
+
+    Outcomes: showed_up, no_show, cancelled
+    """
+    if feedback.outcome not in ("showed_up", "no_show", "cancelled"):
+        raise HTTPException(status_code=400, detail="outcome must be showed_up, no_show, or cancelled")
+
+    # Compute drift: how far off was the prediction?
+    # actual_no_show = 1.0 if they didn't show, 0.0 if they did
+    actual_no_show = 0.0 if feedback.outcome == "showed_up" else 1.0
+    drift = round(abs(feedback.predicted_risk - actual_no_show), 3)
+
+    record = {
+        "record_id": feedback.record_id,
+        "tenant_id": x_tenant_id,
+        "guest_name": feedback.guest_name,
+        "outcome": feedback.outcome,
+        "predicted_risk": feedback.predicted_risk,
+        "predicted_label": feedback.predicted_label,
+        "drift": drift,
+        "notes": feedback.notes,
+        "submitted_at": datetime.utcnow().isoformat(),
+    }
+    _feedback_store.append(record)
+
+    logger.info(
+        f"Feedback: {feedback.guest_name} -> {feedback.outcome} "
+        f"(predicted {feedback.predicted_risk:.0%}, drift {drift:.0%})"
+    )
+
+    return FeedbackResponse(
+        status="recorded",
+        record_id=feedback.record_id,
+        outcome=feedback.outcome,
+        drift=drift,
+    )
+
+
+@app.get("/api/v1/feedback/stats")
+async def feedback_stats(
+    x_tenant_id: str = Header(default="default", alias="X-Tenant-ID"),
+):
+    """Return aggregate feedback statistics for model monitoring.
+
+    Includes accuracy, average drift, and outcome distribution.
+    """
+    tenant_records = [r for r in _feedback_store if r["tenant_id"] == x_tenant_id]
+
+    if not tenant_records:
+        return {
+            "total_feedback": 0,
+            "accuracy": None,
+            "avg_drift": None,
+            "outcomes": {"showed_up": 0, "no_show": 0, "cancelled": 0},
+        }
+
+    total = len(tenant_records)
+    outcomes = {"showed_up": 0, "no_show": 0, "cancelled": 0}
+    correct = 0
+    total_drift = 0.0
+
+    for r in tenant_records:
+        outcomes[r["outcome"]] = outcomes.get(r["outcome"], 0) + 1
+        total_drift += r["drift"]
+        # Prediction is "correct" if drift < 0.3
+        if r["drift"] < 0.3:
+            correct += 1
+
+    return {
+        "total_feedback": total,
+        "accuracy": round(correct / total, 3),
+        "avg_drift": round(total_drift / total, 3),
+        "outcomes": outcomes,
+    }

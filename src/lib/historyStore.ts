@@ -12,6 +12,7 @@ export interface AnalysisRecord {
 
 /* ── Constants ───────────────────────────────────────────── */
 const STORAGE_KEY = "emenu_analysis_history";
+const FEEDBACK_KEY = "emenu_feedback_log";
 const MAX_RECORDS = 200;
 const TENANT_ID = "restaurant_001";
 
@@ -249,4 +250,64 @@ export async function getCloudStatus(): Promise<{
   } catch {
     return { configured: true, connected: false, cloudCount: 0 };
   }
+}
+
+/* ══════════════════════════════════════════════════════════
+   FEEDBACK LOOP — Track ground-truth outcomes locally
+   ══════════════════════════════════════════════════════════ */
+
+export type FeedbackOutcome = "showed_up" | "no_show" | "cancelled";
+
+export interface FeedbackEntry {
+  recordId: string;
+  outcome: FeedbackOutcome;
+  drift: number;
+  submittedAt: string;
+}
+
+/** Get all feedback entries (from localStorage). */
+export function getFeedbackLog(): Record<string, FeedbackEntry> {
+  try {
+    const raw = localStorage.getItem(FEEDBACK_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as Record<string, FeedbackEntry>;
+  } catch {
+    return {};
+  }
+}
+
+/** Save feedback for a specific record (keyed by record ID). */
+export function saveFeedback(entry: FeedbackEntry): void {
+  const log = getFeedbackLog();
+  log[entry.recordId] = entry;
+  localStorage.setItem(FEEDBACK_KEY, JSON.stringify(log));
+
+  // Also push to Supabase if configured
+  const sb = getSupabase();
+  if (sb) {
+    sb.from("prediction_feedback")
+      .insert({
+        id: `fb-${entry.recordId}`,
+        record_id: entry.recordId,
+        tenant_id: TENANT_ID,
+        outcome: entry.outcome,
+        drift: entry.drift,
+        submitted_at: entry.submittedAt,
+      })
+      .then(({ error }) => {
+        if (error && !error.message.includes("duplicate")) {
+          console.warn("[Supabase] feedback insert error:", error.message);
+        }
+      });
+  }
+}
+
+/** Check if a record already has feedback. */
+export function hasFeedback(recordId: string): boolean {
+  return recordId in getFeedbackLog();
+}
+
+/** Get feedback for a specific record. */
+export function getRecordFeedback(recordId: string): FeedbackEntry | null {
+  return getFeedbackLog()[recordId] ?? null;
 }

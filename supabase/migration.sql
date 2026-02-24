@@ -43,6 +43,51 @@ CREATE INDEX IF NOT EXISTS idx_history_source
   ON analysis_history (source);
 
 -- ═══════════════════════════════════════════════════════════
+-- eMenu Smart Tags — Feedback Loop Table
+-- Stores ground-truth outcomes for model accuracy monitoring
+-- ═══════════════════════════════════════════════════════════
+
+-- 5. Feedback table for closing the prediction loop
+CREATE TABLE IF NOT EXISTS prediction_feedback (
+  id            TEXT PRIMARY KEY,
+  record_id     TEXT NOT NULL,
+  tenant_id     TEXT NOT NULL DEFAULT 'restaurant_001',
+  guest_name    TEXT NOT NULL DEFAULT '',
+  outcome       TEXT NOT NULL CHECK (outcome IN ('showed_up', 'no_show', 'cancelled')),
+  predicted_risk FLOAT NOT NULL DEFAULT 0.0,
+  predicted_label TEXT NOT NULL DEFAULT '',
+  drift         FLOAT NOT NULL DEFAULT 0.0,
+  notes         TEXT DEFAULT '',
+  submitted_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- Link back to the prediction record
+  CONSTRAINT fk_record FOREIGN KEY (record_id) REFERENCES analysis_history(id) ON DELETE CASCADE
+);
+
+-- 6. Enable RLS on feedback
+ALTER TABLE prediction_feedback ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow select feedback for all"
+  ON prediction_feedback FOR SELECT
+  USING (true);
+
+CREATE POLICY "Allow insert feedback for all"
+  ON prediction_feedback FOR INSERT
+  WITH CHECK (true);
+
+-- 7. Indexes for feedback queries
+CREATE INDEX IF NOT EXISTS idx_feedback_tenant
+  ON prediction_feedback (tenant_id);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_record
+  ON prediction_feedback (record_id);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_outcome
+  ON prediction_feedback (outcome);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_submitted
+  ON prediction_feedback (submitted_at DESC);
+
+-- ═══════════════════════════════════════════════════════════
 -- HOW TO USE:
 -- 1. Go to https://supabase.com and create a free project
 -- 2. Open SQL Editor in the Supabase dashboard

@@ -92,3 +92,52 @@ export async function healthCheck(): Promise<Record<string, unknown>> {
   const res = await fetch(`${API_BASE}/health`);
   return res.json();
 }
+
+/* ── Feedback Loop ──────────────────────────────────────── */
+
+export interface FeedbackPayload {
+  record_id: string;
+  guest_name: string;
+  outcome: "showed_up" | "no_show" | "cancelled";
+  predicted_risk: number;
+  predicted_label: string;
+  notes?: string;
+}
+
+export interface FeedbackResult {
+  status: string;
+  record_id: string;
+  outcome: string;
+  drift: number;
+}
+
+export async function submitFeedback(
+  payload: FeedbackPayload,
+  tenantId?: string
+): Promise<FeedbackResult> {
+  const res = await fetch(`${API_BASE}/v1/feedback`, {
+    method: "POST",
+    headers: tenantHeaders(tenantId),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(body || `Feedback submission failed: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function getFeedbackStats(
+  tenantId?: string
+): Promise<{
+  total_feedback: number;
+  accuracy: number | null;
+  avg_drift: number | null;
+  outcomes: { showed_up: number; no_show: number; cancelled: number };
+}> {
+  const res = await fetch(`${API_BASE}/v1/feedback/stats`, {
+    headers: tenantHeaders(tenantId),
+  });
+  if (!res.ok) throw new Error("Failed to fetch feedback stats");
+  return res.json();
+}
