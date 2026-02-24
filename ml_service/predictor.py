@@ -99,6 +99,69 @@ def _build_explanation(
     return " + ".join(factors[:3])
 
 
+def _temporal_adjustment(reservation_date: Optional[str]) -> float:
+    """Calculate a reliability adjustment based on day-of-week and season.
+
+    Research-backed restaurant no-show patterns:
+    - Friday/Saturday evenings: lowest no-show (high demand, hard to rebook)
+    - Monday/Tuesday: highest no-show (low commitment, easy to skip)
+    - Holidays & special dates: lower no-show (planned in advance, emotional)
+    - January (post-holiday): higher no-show (resolution fatigue)
+    - Summer: slightly higher no-show (last-minute plan changes)
+
+    Returns a reliability adjustment in [-0.08, +0.06].
+    """
+    from datetime import datetime
+
+    if not reservation_date:
+        try:
+            dt = datetime.now()
+        except Exception:
+            return 0.0
+    else:
+        try:
+            dt = datetime.fromisoformat(reservation_date)
+        except (ValueError, TypeError):
+            return 0.0
+
+    adj = 0.0
+
+    # ── Day-of-week factor ──
+    weekday = dt.weekday()  # 0=Mon ... 6=Sun
+    if weekday in (4, 5):      # Friday, Saturday
+        adj += 0.05            # High demand → people show up
+    elif weekday == 6:         # Sunday
+        adj += 0.02            # Decent commitment (family day)
+    elif weekday in (0, 1):    # Monday, Tuesday
+        adj -= 0.04            # Easy to skip, low demand
+    # Wed/Thu: neutral (0)
+
+    # ── Seasonal factor ──
+    month = dt.month
+    if month == 12:
+        adj += 0.04            # December: holidays, celebrations → reliable
+    elif month == 2 and dt.day == 14:
+        adj += 0.06            # Valentine's Day: very high commitment
+    elif month == 1:
+        adj -= 0.03            # January: post-holiday drop-off
+    elif month in (6, 7, 8):
+        adj -= 0.02            # Summer: vacation plans change
+
+    # ── Holiday proximity (major US/universal holidays) ──
+    md = (month, dt.day)
+    high_commitment_dates = {
+        (2, 14),   # Valentine's Day
+        (12, 24),  # Christmas Eve
+        (12, 25),  # Christmas
+        (12, 31),  # New Year's Eve
+        (1, 1),    # New Year's Day
+    }
+    if md in high_commitment_dates:
+        adj += 0.06  # Capped — these are near-certain shows
+
+    return round(max(-0.08, min(0.06, adj)), 3)
+
+
 def _heuristic_reliability(
     booking_advance_days: int,
     previous_cancellations: int,
@@ -106,12 +169,21 @@ def _heuristic_reliability(
     is_repeat_guest: bool,
     estimated_spend_per_cover: float,
     party_size: int = 2,
+    reservation_date: Optional[str] = None,
 ) -> float:
     """Rule-based reliability score tuned for restaurant domain.
 
     This captures risk factors the hotel ANN model doesn't respond to
     well in the restaurant context. It is blended with the ANN output
     to produce a calibrated final score.
+
+    Factors considered:
+    - Guest loyalty (repeat status, completion history)
+    - Cancellation history (strongest negative signal)
+    - Booking lead time
+    - Spend commitment level
+    - Party size coordination difficulty
+    - Temporal patterns (day-of-week, season, holidays) [NEW]
     """
     score = 0.65
 
@@ -158,6 +230,9 @@ def _heuristic_reliability(
     elif party_size >= 6:
         score -= 0.02
 
+    # Temporal patterns (day-of-week, season, holidays)
+    score += _temporal_adjustment(reservation_date)
+
     return round(max(0.05, min(0.98, score)), 3)
 
 
@@ -167,38 +242,115 @@ def _heuristic_reliability(
 # Three categories with matched-keyword tracking
 
 _TAG_RULES = [
-    # Dietary
-    {"keywords": ["vegan"], "category": "Dietary", "label": "Vegan", "color": "green"},
-    {"keywords": ["vegetarian", "veg "], "category": "Dietary", "label": "Vegetarian", "color": "green"},
-    {"keywords": ["gluten-free", "gluten free", "celiac", "coeliac"], "category": "Dietary", "label": "Gluten Free", "color": "green"},
-    {"keywords": ["dairy-free", "dairy free", "lactose"], "category": "Dietary", "label": "Dairy Free", "color": "green"},
-    {"keywords": ["nut allergy", "nut-free", "peanut"], "category": "Dietary", "label": "Nut Allergy", "color": "green"},
-    {"keywords": ["allergy", "allergic", "epipen", "anaphylaxis"], "category": "Dietary", "label": "Allergy Alert", "color": "red"},
-    {"keywords": ["halal"], "category": "Dietary", "label": "Halal", "color": "green"},
-    {"keywords": ["kosher"], "category": "Dietary", "label": "Kosher", "color": "green"},
-    {"keywords": ["jain"], "category": "Dietary", "label": "Jain", "color": "green"},
-    # Occasion
-    {"keywords": ["birthday", "bday", "b-day"], "category": "Occasion", "label": "Birthday", "color": "purple"},
-    {"keywords": ["anniversary", "anniv"], "category": "Occasion", "label": "Anniversary", "color": "purple"},
-    {"keywords": ["celebration", "celebrating"], "category": "Occasion", "label": "Celebration", "color": "purple"},
-    {"keywords": ["date night", "romantic"], "category": "Occasion", "label": "Date Night", "color": "purple"},
-    {"keywords": ["honeymoon"], "category": "Occasion", "label": "Honeymoon", "color": "purple"},
-    {"keywords": ["proposal", "proposing", "engagement"], "category": "Occasion", "label": "Proposal", "color": "purple"},
-    # Seating
-    {"keywords": ["window seat", "window table"], "category": "Seating", "label": "Window Seat", "color": "blue"},
-    {"keywords": ["quiet", "private"], "category": "Seating", "label": "Quiet Area", "color": "blue"},
-    {"keywords": ["booth"], "category": "Seating", "label": "Booth", "color": "blue"},
-    {"keywords": ["terrace", "patio", "outside", "outdoor"], "category": "Seating", "label": "Outdoor", "color": "blue"},
-    # Status (kept from original)
-    {"keywords": ["vip", "important", "high profile"], "category": "Status", "label": "VIP", "color": "gold"},
-    {"keywords": ["celebrity", "famous", "celeb guest"], "category": "Status", "label": "Celebrity", "color": "gold"},
-    {"keywords": ["wheelchair", "accessible", "disability"], "category": "Accessibility", "label": "Accessibility", "color": "purple"},
-    {"keywords": ["high chair", "toddler", "baby", "infant"], "category": "Family", "label": "Family Needs", "color": "purple"},
+    # ── Dietary (expanded with synonyms, slang, abbreviations) ──
+    {"keywords": ["vegan", "plant-based", "plant based", "no animal"], "category": "Dietary", "label": "Vegan", "color": "green"},
+    {"keywords": ["vegetarian", "veg ", "veggie", "no meat", "meat-free", "meat free", "pescatarian"], "category": "Dietary", "label": "Vegetarian", "color": "green"},
+    {"keywords": ["gluten-free", "gluten free", "gf ", "celiac", "coeliac", "no gluten", "wheat-free", "wheat free"], "category": "Dietary", "label": "Gluten Free", "color": "green"},
+    {"keywords": ["dairy-free", "dairy free", "df ", "lactose", "no dairy", "milk-free", "milk free", "non-dairy"], "category": "Dietary", "label": "Dairy Free", "color": "green"},
+    {"keywords": ["nut allergy", "nut-free", "nut free", "peanut", "tree nut", "no nuts"], "category": "Dietary", "label": "Nut Allergy", "color": "green"},
+    {"keywords": ["allergy", "allergic", "allergies", "epipen", "anaphylaxis", "intolerance", "intolerant", "sensitive to", "cannot eat", "can't eat"], "category": "Dietary", "label": "Allergy Alert", "color": "red"},
+    {"keywords": ["halal", "zabiha"], "category": "Dietary", "label": "Halal", "color": "green"},
+    {"keywords": ["kosher", "pareve"], "category": "Dietary", "label": "Kosher", "color": "green"},
+    {"keywords": ["jain", "jain food"], "category": "Dietary", "label": "Jain", "color": "green"},
+    {"keywords": ["keto", "low-carb", "low carb", "no carb"], "category": "Dietary", "label": "Keto/Low-Carb", "color": "green"},
+    {"keywords": ["seafood allergy", "shellfish", "no fish", "fish allergy", "no seafood"], "category": "Dietary", "label": "Seafood Allergy", "color": "red"},
+    # ── Occasion (expanded with slang and variations) ──
+    {"keywords": ["birthday", "bday", "b-day", "birth day", "turning ", "turns "], "category": "Occasion", "label": "Birthday", "color": "purple"},
+    {"keywords": ["anniversary", "anniv", "anni", "wedding anniversary", "years together"], "category": "Occasion", "label": "Anniversary", "color": "purple"},
+    {"keywords": ["celebration", "celebrating", "celebrate", "party", "special occasion", "festive"], "category": "Occasion", "label": "Celebration", "color": "purple"},
+    {"keywords": ["date night", "romantic", "romance", "couple", "intimate dinner", "candlelight"], "category": "Occasion", "label": "Date Night", "color": "purple"},
+    {"keywords": ["honeymoon", "just married", "newlywed"], "category": "Occasion", "label": "Honeymoon", "color": "purple"},
+    {"keywords": ["proposal", "proposing", "engagement", "engage", "ring", "will you marry", "pop the question"], "category": "Occasion", "label": "Proposal", "color": "purple"},
+    {"keywords": ["graduation", "grad dinner", "grad party"], "category": "Occasion", "label": "Graduation", "color": "purple"},
+    {"keywords": ["business dinner", "business meeting", "client dinner", "corporate dinner", "work dinner"], "category": "Occasion", "label": "Business Dinner", "color": "blue"},
+    {"keywords": ["farewell", "going away", "goodbye dinner", "send-off", "sendoff"], "category": "Occasion", "label": "Farewell", "color": "purple"},
+    {"keywords": ["reunion", "get together", "get-together", "catching up"], "category": "Occasion", "label": "Reunion", "color": "purple"},
+    # ── Seating (expanded) ──
+    {"keywords": ["window seat", "window table", "by the window", "near window"], "category": "Seating", "label": "Window Seat", "color": "blue"},
+    {"keywords": ["quiet", "private", "secluded", "corner table", "away from noise", "peaceful"], "category": "Seating", "label": "Quiet Area", "color": "blue"},
+    {"keywords": ["booth", "banquette"], "category": "Seating", "label": "Booth", "color": "blue"},
+    {"keywords": ["terrace", "patio", "outside", "outdoor", "garden", "rooftop", "al fresco", "open air"], "category": "Seating", "label": "Outdoor", "color": "blue"},
+    {"keywords": ["bar seat", "bar area", "at the bar", "counter seat", "chef's table", "chef table"], "category": "Seating", "label": "Bar/Counter", "color": "blue"},
+    {"keywords": ["private room", "private dining", "private area", "separate room", "pdr"], "category": "Seating", "label": "Private Dining", "color": "blue"},
+    # ── Status ──
+    {"keywords": ["vip", "important", "high profile", "v.i.p", "very important"], "category": "Status", "label": "VIP", "color": "gold"},
+    {"keywords": ["celebrity", "famous", "celeb guest", "public figure", "influencer", "food blogger", "food critic", "reviewer", "critic"], "category": "Status", "label": "Celebrity/Press", "color": "gold"},
+    {"keywords": ["first time", "first visit", "new guest", "never been", "first timer"], "category": "Status", "label": "First Visit", "color": "cyan"},
+    {"keywords": ["regular", "frequent", "loyal", "comes every", "always comes", "usual"], "category": "Status", "label": "Regular", "color": "gold"},
+    # ── Accessibility ──
+    {"keywords": ["wheelchair", "accessible", "disability", "disabled", "mobility", "walker", "crutches", "handicap"], "category": "Accessibility", "label": "Accessibility", "color": "purple"},
+    {"keywords": ["hearing impaired", "deaf", "hard of hearing", "sign language", "hearing aid"], "category": "Accessibility", "label": "Hearing Support", "color": "purple"},
+    {"keywords": ["visually impaired", "blind", "low vision", "braille"], "category": "Accessibility", "label": "Vision Support", "color": "purple"},
+    # ── Family ──
+    {"keywords": ["high chair", "toddler", "baby", "infant", "child seat", "booster seat", "kids menu", "children's menu"], "category": "Family", "label": "Family Needs", "color": "purple"},
+    {"keywords": ["stroller", "pram", "pushchair", "buggy"], "category": "Family", "label": "Stroller Space", "color": "purple"},
+    {"keywords": ["pregnant", "expecting", "maternity", "mom-to-be"], "category": "Family", "label": "Expectant Parent", "color": "purple"},
+    # ── Timing ──
+    {"keywords": ["early dinner", "early seating", "before 6", "5pm", "5:30"], "category": "Timing", "label": "Early Seating", "color": "cyan"},
+    {"keywords": ["late dinner", "late seating", "after 9", "9:30", "10pm", "late night"], "category": "Timing", "label": "Late Seating", "color": "cyan"},
+    {"keywords": ["in a rush", "quick dinner", "short on time", "tight schedule", "hurry", "fast service"], "category": "Timing", "label": "Time Pressed", "color": "cyan"},
+    # ── Service ──
+    {"keywords": ["cake", "dessert surprise", "bring a cake", "birthday cake", "custom cake"], "category": "Service", "label": "Cake/Dessert", "color": "pink"},
+    {"keywords": ["flowers", "bouquet", "roses", "decoration", "decorate", "balloons", "banner"], "category": "Service", "label": "Decorations", "color": "pink"},
+    {"keywords": ["wine pairing", "sommelier", "wine list", "wine selection", "tasting menu"], "category": "Service", "label": "Wine/Tasting", "color": "pink"},
+    {"keywords": ["photographer", "photo", "pictures", "photography"], "category": "Service", "label": "Photography", "color": "pink"},
 ]
+
+
+def _fuzzy_word_match(text_lower: str, keyword: str, threshold: int = 1) -> bool:
+    """Check if any word in text is within `threshold` edits of the keyword.
+
+    Uses simple Levenshtein-like check for single-word keywords only.
+    Multi-word keywords still use exact substring matching.
+    """
+    if " " in keyword or len(keyword) < 4:
+        return False  # Only fuzzy-match single words of 4+ chars
+
+    words = text_lower.split()
+    for word in words:
+        # Strip common punctuation
+        word = word.strip(".,!?;:'\"()-")
+        if len(word) < 3:
+            continue
+        # Quick length check: skip if lengths differ by more than threshold
+        if abs(len(word) - len(keyword)) > threshold:
+            continue
+        # Simple edit distance check (optimized for threshold=1)
+        if _edit_distance_one(word, keyword):
+            return True
+    return False
+
+
+def _edit_distance_one(a: str, b: str) -> bool:
+    """Return True if strings a and b have edit distance <= 1."""
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:
+        # Substitution: exactly one position differs
+        diffs = sum(1 for ca, cb in zip(a, b) if ca != cb)
+        return diffs <= 1
+    # Insertion/deletion: shorter string is subseq of longer with one skip
+    short, long_ = (a, b) if la < lb else (b, a)
+    i = j = skips = 0
+    while i < len(short) and j < len(long_):
+        if short[i] == long_[j]:
+            i += 1
+            j += 1
+        else:
+            skips += 1
+            j += 1
+            if skips > 1:
+                return False
+    return True
 
 
 def analyze_notes(text: str) -> list[dict]:
     """Scan reservation notes for dietary, occasion, seating, and other tags.
+
+    Uses exact substring matching first, then falls back to fuzzy matching
+    for single-word keywords (edit distance <= 1) to catch typos like
+    "vegitarian", "aniversary", "birtday", etc.
 
     Returns a list of matched smart tags with category, label, and color.
     """
@@ -212,16 +364,27 @@ def analyze_notes(text: str) -> list[dict]:
     for rule in _TAG_RULES:
         if rule["label"] in seen_labels:
             continue
+        matched_kw = None
+        # Pass 1: exact substring match (fast)
         for kw in rule["keywords"]:
             if kw in text_lower:
-                found.append({
-                    "category": rule["category"],
-                    "label": rule["label"],
-                    "color": rule["color"],
-                    "matched": kw,
-                })
-                seen_labels.add(rule["label"])
+                matched_kw = kw
                 break
+        # Pass 2: fuzzy match for single-word keywords (catches typos)
+        if not matched_kw:
+            for kw in rule["keywords"]:
+                if _fuzzy_word_match(text_lower, kw):
+                    matched_kw = f"~{kw}"  # prefix ~ indicates fuzzy match
+                    break
+
+        if matched_kw:
+            found.append({
+                "category": rule["category"],
+                "label": rule["label"],
+                "color": rule["color"],
+                "matched": matched_kw,
+            })
+            seen_labels.add(rule["label"])
 
     return found
 
