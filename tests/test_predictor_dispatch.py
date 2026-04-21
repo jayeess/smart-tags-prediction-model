@@ -165,6 +165,50 @@ class TestPersonalizedANNRouting:
 
 
 # ---------------------------------------------------------------------------
+# ANN graceful fallback
+# ---------------------------------------------------------------------------
+
+class TestANNGracefulFallback:
+    @patch("ml_service.predictor.hash_phone", return_value="h1")
+    @patch("ml_service.predictor.get_history")
+    def test_ann_load_failure_falls_back_to_cold_start(self, mock_hist, mock_hash):
+        """When _ensure_loaded raises (model file missing), route to cold-start."""
+        mock_hist.return_value = _history(5)
+        predictor = GuestBehaviorPredictor()
+
+        with patch.object(predictor, "_ensure_loaded", side_effect=OSError("File not found")):
+            result = predictor.predict(tenant_id="t1", phone="0501234567")
+
+        assert result.scorer_used == "cold_start_heuristic"
+        assert "ANN unavailable" in result.confidence_basis
+        assert "OSError" in result.confidence_basis
+
+    @patch("ml_service.predictor.hash_phone", return_value="h1")
+    @patch("ml_service.predictor.get_history")
+    def test_ann_fallback_produces_valid_interval(self, mock_hist, mock_hash):
+        mock_hist.return_value = _history(5)
+        predictor = GuestBehaviorPredictor()
+
+        with patch.object(predictor, "_ensure_loaded", side_effect=OSError("missing")):
+            result = predictor.predict(tenant_id="t1", phone="0501234567")
+
+        assert result.risk_interval_low <= result.risk_point_estimate <= result.risk_interval_high
+
+    @patch("ml_service.predictor.hash_phone", return_value="h1")
+    @patch("ml_service.predictor.get_history")
+    def test_ann_fallback_segment_preserved(self, mock_hist, mock_hash):
+        """Segment reflects history even when ANN falls back — guest is still 'returning'."""
+        mock_hist.return_value = _history(5)
+        predictor = GuestBehaviorPredictor()
+
+        with patch.object(predictor, "_ensure_loaded", side_effect=RuntimeError("TF error")):
+            result = predictor.predict(tenant_id="t1", phone="0501234567")
+
+        assert result.guest_segment == "returning"
+        assert result.scorer_used == "cold_start_heuristic"
+
+
+# ---------------------------------------------------------------------------
 # Cold-start output shape
 # ---------------------------------------------------------------------------
 
