@@ -12,10 +12,18 @@ export interface GuestPrediction {
   risk_label: "Low Risk" | "Medium Risk" | "High Risk";
   ai_tag: string;
   spend_tag: string;
+  rule_tags: string[];
   sentiment: Sentiment;
   confidence: number;
   tenant_id: string;
   predicted_at: string;
+  // Phase 1 additions
+  risk_point_estimate: number;
+  risk_interval_low: number;
+  risk_interval_high: number;
+  guest_segment: "new_guest" | "returning" | "regular";
+  scorer_used: "cold_start_heuristic" | "personalized_ann";
+  confidence_basis: string;
 }
 
 export interface ReservationInput {
@@ -33,6 +41,7 @@ export interface ReservationInput {
   booking_channel: string;
   notes: string;
   table_number?: number;
+  phone?: string;
 }
 
 export interface TagResult {

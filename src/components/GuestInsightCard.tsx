@@ -18,6 +18,29 @@ interface GuestInsightCardProps {
   compact?: boolean;
 }
 
+const SEGMENT_STYLES: Record<string, string> = {
+  new_guest: "bg-sky-100 text-sky-800 border-sky-300",
+  returning: "bg-indigo-100 text-indigo-800 border-indigo-300",
+  regular: "bg-emerald-100 text-emerald-800 border-emerald-300",
+};
+
+const SEGMENT_LABELS: Record<string, string> = {
+  new_guest: "New Guest",
+  returning: "Returning",
+  regular: "Regular",
+};
+
+function GuestSegmentBadge({ segment }: { segment: GuestPrediction["guest_segment"] }) {
+  const style = SEGMENT_STYLES[segment] ?? SEGMENT_STYLES.new_guest;
+  return (
+    <span
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${style}`}
+    >
+      {SEGMENT_LABELS[segment] ?? segment}
+    </span>
+  );
+}
+
 export default function GuestInsightCard({
   prediction,
   compact = false,
@@ -28,6 +51,10 @@ export default function GuestInsightCard({
       : prediction.risk_label === "Medium Risk"
       ? "border-l-amber-500"
       : "border-l-emerald-500";
+
+  const riskPct = (prediction.risk_point_estimate * 100).toFixed(1);
+  const intervalLow = Math.round(prediction.risk_interval_low * 100);
+  const intervalHigh = Math.round(prediction.risk_interval_high * 100);
 
   if (compact) {
     return (
@@ -42,6 +69,7 @@ export default function GuestInsightCard({
           <AITagBadge tag={prediction.ai_tag} />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <GuestSegmentBadge segment={prediction.guest_segment} />
           <SpendBadge tier={prediction.spend_tag} />
           <SentimentBadge sentiment={prediction.sentiment} />
         </div>
@@ -50,9 +78,7 @@ export default function GuestInsightCard({
   }
 
   return (
-    <div
-      className={`card border-l-4 ${riskColor} animate-slide-up`}
-    >
+    <div className={`card border-l-4 ${riskColor} animate-slide-up`}>
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div>
@@ -64,7 +90,10 @@ export default function GuestInsightCard({
             Tenant: {prediction.tenant_id}
           </p>
         </div>
-        <AITagBadge tag={prediction.ai_tag} />
+        <div className="flex flex-col items-end gap-1.5">
+          <AITagBadge tag={prediction.ai_tag} />
+          <GuestSegmentBadge segment={prediction.guest_segment} />
+        </div>
       </div>
 
       {/* Metrics Grid */}
@@ -79,21 +108,32 @@ export default function GuestInsightCard({
           </div>
         </div>
 
+        {/* No-show risk with interval and confidence_basis tooltip */}
         <div className="bg-gray-50 rounded-lg p-3">
           <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
             <AlertTriangle className="w-3.5 h-3.5" />
             No-Show Risk
           </div>
-          <div
-            className={`text-2xl font-bold ${
-              prediction.no_show_risk >= 0.6
-                ? "text-red-600"
-                : prediction.no_show_risk >= 0.35
-                ? "text-amber-600"
-                : "text-emerald-600"
-            }`}
-          >
-            {(prediction.no_show_risk * 100).toFixed(1)}%
+          <div className="relative group">
+            <div
+              className={`text-2xl font-bold ${
+                prediction.no_show_risk >= 0.6
+                  ? "text-red-600"
+                  : prediction.no_show_risk >= 0.35
+                  ? "text-amber-600"
+                  : "text-emerald-600"
+              }`}
+            >
+              {riskPct}%
+            </div>
+            <div className="text-xs text-gray-400 mt-0.5">
+              Likely {intervalLow}–{intervalHigh}%
+            </div>
+            {/* Confidence basis tooltip — visible on hover */}
+            <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-72 bg-gray-800 text-white text-xs rounded-lg p-2.5 z-10 shadow-xl leading-relaxed">
+              <p className="font-semibold mb-1">How this was calculated</p>
+              <p>{prediction.confidence_basis}</p>
+            </div>
           </div>
         </div>
       </div>
