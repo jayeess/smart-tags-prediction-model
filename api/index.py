@@ -13,7 +13,7 @@ All endpoints enforce tenant isolation via tenant_id.
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Header, Query
@@ -80,6 +80,9 @@ class ReservationInput(BaseModel):
     booking_channel: str = Field(default="Online")
     notes: str = Field(default="")
     table_number: Optional[int] = None
+    # Optional: used for guest identity lookup. Hashed server-side immediately;
+    # never stored or logged in raw form.
+    phone: Optional[str] = Field(default=None, max_length=30)
 
 
 class SentimentResponse(BaseModel):
@@ -89,6 +92,7 @@ class SentimentResponse(BaseModel):
 
 
 class PredictionResponse(BaseModel):
+    # --- Original fields (backwards-compatible) ---
     guest_name: str
     reservation_id: Optional[str] = None
     reliability_score: float
@@ -101,6 +105,13 @@ class PredictionResponse(BaseModel):
     confidence: float
     tenant_id: str
     predicted_at: str
+    # --- Phase 1 additions ---
+    risk_point_estimate: float
+    risk_interval_low: float
+    risk_interval_high: float
+    guest_segment: Literal["new_guest", "returning", "regular"]
+    scorer_used: Literal["cold_start_heuristic", "personalized_ann"]
+    confidence_basis: str
 
 
 class AnalyzeTagsRequest(BaseModel):
@@ -167,17 +178,6 @@ def extract_rule_tags(text: str) -> list[str]:
     if any(k in t for k in ["birthday", "anniversary"]):
         tags.append("Occasion")
     return tags
-
-
-def calibrate_restaurant_data(
-    lead_time_hours: int,
-    estimated_spend_per_cover: float,
-) -> tuple[int, float]:
-    adjusted_lead_days = max(1, int(lead_time_hours // 24))
-    if lead_time_hours < 24:
-        adjusted_lead_days = 5
-    adjusted_spend = estimated_spend_per_cover * 1.5 if estimated_spend_per_cover < 80 else estimated_spend_per_cover
-    return adjusted_lead_days, adjusted_spend
 
 
 def analyze_smart_tags(text: str) -> list[dict]:
@@ -334,10 +334,12 @@ async def predict_guest_behavior(
         is_repeat_guest=reservation.is_repeat_guest,
         estimated_spend_per_cover=reservation.estimated_spend_per_cover,
         reservation_date=reservation.reservation_date,
+        reservation_time=reservation.reservation_time,
         previous_cancellations=reservation.previous_cancellations,
         previous_completions=reservation.previous_completions,
         booking_channel=reservation.booking_channel,
         notes=reservation.notes,
+        phone=reservation.phone,
     )
 
     return PredictionResponse(
@@ -356,6 +358,12 @@ async def predict_guest_behavior(
         confidence=prediction.confidence,
         tenant_id=x_tenant_id,
         predicted_at=datetime.utcnow().isoformat(),
+        risk_point_estimate=prediction.risk_point_estimate,
+        risk_interval_low=prediction.risk_interval_low,
+        risk_interval_high=prediction.risk_interval_high,
+        guest_segment=prediction.guest_segment,
+        scorer_used=prediction.scorer_used,
+        confidence_basis=prediction.confidence_basis,
     )
 
 
@@ -378,10 +386,12 @@ async def predict_batch(
             is_repeat_guest=reservation.is_repeat_guest,
             estimated_spend_per_cover=reservation.estimated_spend_per_cover,
             reservation_date=reservation.reservation_date,
+            reservation_time=reservation.reservation_time,
             previous_cancellations=reservation.previous_cancellations,
             previous_completions=reservation.previous_completions,
             booking_channel=reservation.booking_channel,
             notes=reservation.notes,
+            phone=reservation.phone,
         )
         results.append(
             PredictionResponse(
@@ -400,6 +410,12 @@ async def predict_batch(
                 confidence=prediction.confidence,
                 tenant_id=x_tenant_id,
                 predicted_at=datetime.utcnow().isoformat(),
+                risk_point_estimate=prediction.risk_point_estimate,
+                risk_interval_low=prediction.risk_interval_low,
+                risk_interval_high=prediction.risk_interval_high,
+                guest_segment=prediction.guest_segment,
+                scorer_used=prediction.scorer_used,
+                confidence_basis=prediction.confidence_basis,
             )
         )
 
@@ -411,43 +427,44 @@ async def predict_guest_behavior_unified(
     reservation: ReservationInput,
     x_tenant_id: str = Header(default="restaurant_001", alias="X-Tenant-ID"),
 ):
+    """Legacy endpoint — no longer applies calibrate_restaurant_data shims.
+
+    Behaviour change (Phase 1): booking_advance_days and estimated_spend_per_cover
+    are now passed directly to the predictor without the lead-time padding and
+    spend-inflation hacks that were previously applied here. Cold-start guests
+    (no phone or < 3 visits) are scored via the transparent heuristic.
+    """
     predictor = get_predictor()
-    adj_lead, adj_spend = calibrate_restaurant_data(
-        reservation.booking_advance_days, reservation.estimated_spend_per_cover
-    )
     try:
         prediction = predictor.predict(
             tenant_id=x_tenant_id,
             party_size=reservation.party_size,
             children=reservation.children,
-            booking_advance_days=adj_lead,
+            booking_advance_days=reservation.booking_advance_days,
             special_needs_count=reservation.special_needs_count,
             is_repeat_guest=reservation.is_repeat_guest,
-            estimated_spend_per_cover=adj_spend,
+            estimated_spend_per_cover=reservation.estimated_spend_per_cover,
             reservation_date=reservation.reservation_date,
+            reservation_time=reservation.reservation_time,
             previous_cancellations=reservation.previous_cancellations,
             previous_completions=reservation.previous_completions,
             booking_channel=reservation.booking_channel,
             notes=reservation.notes,
+            phone=reservation.phone,
         )
         risk_score = prediction.no_show_risk
-        if risk_score > 0.65:
-            risk_label = "High Risk"
-        elif risk_score >= 0.35:
-            risk_label = "Medium Risk"
-        else:
-            risk_label = "Low Risk"
+        risk_label = prediction.risk_label
     except Exception:
         risk_score = 0.5
         risk_label = "AI Unavailable"
     parts = []
-    if reservation.booking_advance_days < 24:
+    if reservation.booking_advance_days == 0:
         parts.append("Short Notice")
-    if reservation.party_size > 6:
+    if reservation.party_size >= 6:
         parts.append("Large Group")
     if reservation.estimated_spend_per_cover < 80:
         parts.append("Low Spend")
-    explanation = "Reason: " + (" + ".join(parts) if parts else "Calibrated restaurant inputs")
+    explanation = "Reason: " + (" + ".join(parts) if parts else "Standard inputs")
     smart_tags = analyze_smart_tags(reservation.notes)
     return {
         "ai_prediction": {

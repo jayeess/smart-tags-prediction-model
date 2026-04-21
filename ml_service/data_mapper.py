@@ -86,7 +86,10 @@ class RestaurantToHotelMapper:
             weekend_nights = cls.DEFAULTS["no_of_weekend_nights"]
             week_nights = cls.DEFAULTS["no_of_week_nights"]
 
-        # Always use the training-era year so the scaler produces valid values
+        # TODO-PHASE-4: retrain on restaurant-native data and remove this year pin.
+        # The ANN was trained on 2017–2018 hotel data; forcing arrival_year=2018
+        # keeps scaled values within the distribution the StandardScaler was fit on.
+        # This is a known V1 limitation — cold-start path does not use this mapper.
         year = cls._TRAINING_YEAR
 
         # Map booking channel to market segment
@@ -117,10 +120,17 @@ class RestaurantToHotelMapper:
         else:
             meal_plan = "Not Selected"
 
+        # TODO-PHASE-4: remove these calibration hacks once the ANN is retrained on
+        # restaurant-native data. They compensate for distribution mismatch between
+        # the 2017–2018 hotel dataset and real restaurant reservations.
         adjusted_lead_time = booking_advance_days
         if booking_advance_days < 1:
             adjusted_lead_time = 5
-        adjusted_spend = estimated_spend_per_cover * 1.5 if estimated_spend_per_cover < 80 else estimated_spend_per_cover
+        adjusted_spend = (
+            estimated_spend_per_cover * 1.5
+            if estimated_spend_per_cover < 80
+            else estimated_spend_per_cover
+        )
 
         row = {
             "no_of_adults": adults,
