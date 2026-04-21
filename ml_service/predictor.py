@@ -73,11 +73,14 @@ class GuestBehaviorPredictor:
 
     def _has_dropout(self) -> bool:
         """Return True if the loaded Keras model has any Dropout layers."""
-        import tensorflow as tf
-        return any(
-            isinstance(layer, tf.keras.layers.Dropout)
-            for layer in self._model.layers
-        )
+        try:
+            import tensorflow as tf
+            return any(
+                isinstance(layer, tf.keras.layers.Dropout)
+                for layer in self._model.layers
+            )
+        except ImportError:
+            return False
 
     def _ann_predict(
         self,
