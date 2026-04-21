@@ -112,7 +112,7 @@ class GuestBehaviorPredictor:
             high = round(min(0.99, risk + 0.10), 3)
             basis = (
                 "Personalized ANN — single-pass inference (no dropout layers detected). "
-                "Interval is ±10pp rule-of-thumb. confidence_basis: rule-of-thumb"
+                "Interval is a fixed ±10pp rule-of-thumb; MC Dropout not available."
             )
 
         return risk, low, high, basis
@@ -209,24 +209,50 @@ class GuestBehaviorPredictor:
             confidence = round(1.0 - (interval_high - interval_low), 3)
 
         else:
-            self._ensure_loaded()
-            feature_df = RestaurantToHotelMapper.map_reservation(
-                party_size=party_size,
-                children=children,
-                booking_advance_days=booking_advance_days,
-                special_needs_count=special_needs_count,
-                is_repeat_guest=is_repeat_guest,
-                estimated_spend_per_cover=estimated_spend_per_cover,
-                reservation_date=reservation_date,
-                previous_cancellations=previous_cancellations,
-                previous_completions=previous_completions,
-                booking_channel=booking_channel,
-            )
-            no_show_risk, interval_low, interval_high, confidence_basis = (
-                self._ann_predict(feature_df)
-            )
-            scorer_used = "personalized_ann"
-            confidence = round(abs((1.0 - no_show_risk) - 0.5) * 2, 3)
+            ann_failed = False
+            try:
+                self._ensure_loaded()
+                feature_df = RestaurantToHotelMapper.map_reservation(
+                    party_size=party_size,
+                    children=children,
+                    booking_advance_days=booking_advance_days,
+                    special_needs_count=special_needs_count,
+                    is_repeat_guest=is_repeat_guest,
+                    estimated_spend_per_cover=estimated_spend_per_cover,
+                    reservation_date=reservation_date,
+                    previous_cancellations=previous_cancellations,
+                    previous_completions=previous_completions,
+                    booking_channel=booking_channel,
+                )
+                no_show_risk, interval_low, interval_high, confidence_basis = (
+                    self._ann_predict(feature_df)
+                )
+                scorer_used = "personalized_ann"
+                confidence = round(abs((1.0 - no_show_risk) - 0.5) * 2, 3)
+            except Exception as exc:
+                # Model file missing, TF not installed, or inference error.
+                # Fall back to cold-start rather than surfacing a 500.
+                ann_failed = True
+                ann_error = type(exc).__name__
+
+            if ann_failed:
+                cs = cold_start_predict(
+                    party_size=party_size,
+                    lead_time_days=booking_advance_days,
+                    booking_channel=booking_channel,
+                    card_held_flag=False,
+                    reservation_date=reservation_date,
+                    reservation_time=reservation_time,
+                )
+                no_show_risk = cs.point_estimate
+                interval_low = cs.interval_low
+                interval_high = cs.interval_high
+                scorer_used = "cold_start_heuristic"
+                confidence_basis = (
+                    f"ANN unavailable ({ann_error}) — cold-start heuristic used as fallback. "
+                    + cs.confidence_basis
+                )
+                confidence = round(1.0 - (interval_high - interval_low), 3)
 
         reliability_score = round(1.0 - no_show_risk, 3)
 
