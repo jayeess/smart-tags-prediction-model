@@ -11,6 +11,7 @@ All endpoints enforce tenant isolation via tenant_id.
 """
 
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
@@ -23,10 +24,20 @@ import re
 # Ensure ml_service is importable
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Create DB tables on startup; nothing to tear down on shutdown."""
+    from ml_service.database import create_tables
+    create_tables()
+    yield
+
+
 app = FastAPI(
     title="eMenu Smart Tags - Predictive Intelligence API",
     version="2.0.1",
     description="AI-powered guest behavior prediction and smart tagging for restaurants.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
