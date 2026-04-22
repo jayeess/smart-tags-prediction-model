@@ -67,8 +67,15 @@ PHONE_HASH_SALT=any-random-string-at-least-32-chars
 DATABASE_URL=sqlite:///./emenu_smart_tags.db
 ```
 
-`ANTHROPIC_API_KEY` is required from Phase 2 onwards (LLM tag extraction).
-It is NOT required for Phase 1 predictions.
+For Phase 2 LLM tag extraction, also set:
+
+```env
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Without `ANTHROPIC_API_KEY`, the `/api/v1/reservations/analyze-tags-v2` endpoint
+falls back to the regex safety-net. Set `LLM_TAGS_REQUIRED=true` if you want
+the endpoint to return HTTP 503 instead of falling back.
 
 ### 5. Start the API
 
@@ -160,20 +167,46 @@ The Vite dev server starts at `http://localhost:5173` and proxies `/api`
 requests to the FastAPI backend at `:8000`. See `vite.config.ts` for the
 proxy config.
 
+### 8. Smoke test the LLM tag pipeline (Phase 2)
+
+Requires `ANTHROPIC_API_KEY` to be set.
+
+```bash
+# Allergy + occasion note — should return high urgency
+curl -X POST http://localhost:8000/api/v1/reservations/analyze-tags-v2 \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: restaurant_001" \
+  -d '{"notes":"Guest carries EpiPen. Severe shellfish allergy. Anniversary dinner.",
+       "party_size":2,"is_repeat_guest":false}'
+```
+
+Expected: `"urgency": "high"`, tags include `epipen` and `anniversary`,
+`"llm_used": true`.
+
+Without the API key:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/reservations/analyze-tags-v2 \
+  -H "Content-Type: application/json" \
+  -d '{"notes":"birthday dinner"}'
+```
+
+Expected: `"llm_used": false`, `"fallback_used": true`, tag `"birthday"` from
+the regex safety-net.
+
 ---
 
 ## Running tests
 
 ```bash
-# All backend tests (fast — no TF required)
+# All backend tests (fast — no TF or Anthropic API required)
 python -m pytest tests/ -v
 
 # Single module
-python -m pytest tests/test_cold_start_scorer.py -v
+python -m pytest tests/test_tag_pipeline.py -v
 ```
 
-The test suite mocks the Keras model so TF is never loaded during tests.
-Tests run in ~2 seconds regardless of whether TF is installed.
+All Anthropic/Keras calls are mocked. Tests run in ~2 seconds.
 
 ---
 
