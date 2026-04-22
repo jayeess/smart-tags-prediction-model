@@ -6,10 +6,12 @@ services:
     plan: free
     branch: main
 
-    # Extract the committed model zip into ml_raw/ (gitignored dir) then install deps.
-    # FDS_PROJ(MAIN).zip contains FDS_PROJ/fds_model_1.keras and Hotel_reservations.csv
-    # which model_loader.py expects at ml_raw/FDS_PROJ/*.
-    buildCommand: unzip -o "FDS_PROJ(MAIN).zip" -d ml_raw && pip install -r requirements.txt
+    # Extract the committed model zip into ml_raw/ (gitignored dir), install deps,
+    # then download TextBlob's lite NLTK corpora (punkt tokenizer).
+    # PatternAnalyzer (.sentiment.polarity) is pattern-based and does not need
+    # NLTK corpora itself, but the lite download prevents missing-resource errors
+    # if any other TextBlob feature (tokenisation, tagging) is called at runtime.
+    buildCommand: unzip -o "FDS_PROJ(MAIN).zip" -d ml_raw && pip install -r requirements.txt && python -m textblob.download_corpora lite
 
     startCommand: uvicorn api.index:app --host 0.0.0.0 --port $PORT
 
