@@ -24,6 +24,10 @@ import re
 # Ensure ml_service is importable
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from ml_service.llm_tags import LLMUnavailableError
+from ml_service.sentiment import analyze_sentiment
+from ml_service.tag_pipeline import run_pipeline
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -136,6 +140,36 @@ class AnalyzeTagsResponse(BaseModel):
 
 class BatchPredictionRequest(BaseModel):
     reservations: list[ReservationInput]
+
+
+# ---------------------------------------------------------------------------
+# analyze-tags-v2 schemas
+# ---------------------------------------------------------------------------
+class AnalyzeTagsV2Request(BaseModel):
+    notes: str = Field(default="", max_length=2000)
+    locale: str = Field(default="en", max_length=10)
+    # Structured form fields (used by structured_form pipeline layer)
+    party_size: int = Field(default=2, ge=1, le=20)
+    children: int = Field(default=0, ge=0, le=10)
+    is_repeat_guest: bool = False
+    previous_completions: int = Field(default=0, ge=0)
+
+
+class PipelineTagResponse(BaseModel):
+    tag: str
+    category: str
+    confidence: float
+    source: str
+    provenance_icon: str
+    evidence_span: str = ""
+
+
+class AnalyzeTagsV2Response(BaseModel):
+    tags: list[PipelineTagResponse]
+    urgency: str
+    sentiment: SentimentResponse
+    llm_used: bool
+    fallback_used: bool
 
 
 # ---------------------------------------------------------------------------
@@ -485,7 +519,6 @@ async def analyze_tags(
     combined_text = f"{request.special_request_text} {request.dietary_preferences}".strip()
     tags = extract_tags(combined_text)
 
-    from ml_service.sentiment import analyze_sentiment
     sentiment = analyze_sentiment(combined_text)
 
     confidence = 0.55 if not tags else 0.85
@@ -500,6 +533,62 @@ async def analyze_tags(
         ),
         confidence=confidence,
         engine="regex-v2",
+    )
+
+
+@app.post("/api/v1/reservations/analyze-tags-v2", response_model=AnalyzeTagsV2Response)
+async def analyze_tags_v2(
+    request: AnalyzeTagsV2Request,
+    x_tenant_id: str = Header(default="default", alias="X-Tenant-ID"),
+):
+    """Extract smart tags via the four-layer LLM pipeline.
+
+    Layers: structured_form → history (stub) → llm → fallback_regex.
+
+    When LLM_TAGS_REQUIRED=true and the LLM is unavailable, returns HTTP 503.
+    Otherwise, falls through to the fallback_regex safety net.
+    """
+    try:
+        pipeline_result = run_pipeline(
+            notes=request.notes,
+            locale=request.locale,
+            party_size=request.party_size,
+            children=request.children,
+            is_repeat_guest=request.is_repeat_guest,
+            previous_completions=request.previous_completions,
+            tenant_id=x_tenant_id,
+            phone_hash=None,
+        )
+    except LLMUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    llm_sentiment_dict = None
+    if pipeline_result.llm_sentiment:
+        s = pipeline_result.llm_sentiment
+        llm_sentiment_dict = {"score": s.score, "label": s.label, "rationale": s.rationale}
+
+    sentiment = analyze_sentiment(request.notes, llm_sentiment=llm_sentiment_dict)
+
+    return AnalyzeTagsV2Response(
+        tags=[
+            PipelineTagResponse(
+                tag=t.tag,
+                category=t.category,
+                confidence=t.confidence,
+                source=t.source,
+                provenance_icon=t.provenance_icon,
+                evidence_span=t.evidence_span,
+            )
+            for t in pipeline_result.tags
+        ],
+        urgency=pipeline_result.urgency,
+        sentiment=SentimentResponse(
+            score=sentiment.score,
+            label=sentiment.label,
+            emoji=sentiment.emoji,
+        ),
+        llm_used=pipeline_result.llm_used,
+        fallback_used=pipeline_result.fallback_used,
     )
 
 
