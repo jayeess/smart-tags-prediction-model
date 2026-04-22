@@ -2,6 +2,7 @@ import type {
   ReservationInput,
   GuestPrediction,
   AnalyzeTagsResponse,
+  AnalyzeTagsV2Response,
   DemoScenario,
   SimulatedReservation,
 } from "./types";
@@ -58,6 +59,26 @@ export async function analyzeTags(
     }),
   });
   if (!res.ok) throw new Error(`Tag analysis failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function analyzeTagsV2(
+  notes: string,
+  options: {
+    locale?: string;
+    party_size?: number;
+    children?: number;
+    is_repeat_guest?: boolean;
+    previous_completions?: number;
+  } = {},
+  tenantId?: string
+): Promise<AnalyzeTagsV2Response> {
+  const res = await fetch(`${API_BASE}/v1/reservations/analyze-tags-v2`, {
+    method: "POST",
+    headers: tenantHeaders(tenantId),
+    body: JSON.stringify({ notes, locale: "en", ...options }),
+  });
+  if (!res.ok) throw new Error(`Tag extraction failed: ${res.statusText}`);
   return res.json();
 }
 

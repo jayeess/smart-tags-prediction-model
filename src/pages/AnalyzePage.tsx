@@ -1,8 +1,75 @@
 import { useState } from "react";
-import type { GuestPrediction, ReservationInput, DemoScenario } from "../lib/types";
-import { predictGuestBehavior, getDemoScenarios } from "../lib/api";
+import type {
+  GuestPrediction,
+  ReservationInput,
+  DemoScenario,
+  AnalyzeTagsV2Response,
+  PipelineTag,
+} from "../lib/types";
+import { predictGuestBehavior, getDemoScenarios, analyzeTagsV2 } from "../lib/api";
 import GuestInsightCard from "../components/GuestInsightCard";
-import { Search, Play, Loader2 } from "lucide-react";
+import { Search, Play, Loader2, ChevronDown, ChevronUp, Tag } from "lucide-react";
+
+const URGENCY_COLOR: Record<string, string> = {
+  high: "bg-red-100 text-red-800 border-red-300",
+  medium: "bg-amber-100 text-amber-800 border-amber-300",
+  low: "bg-gray-100 text-gray-700 border-gray-300",
+};
+
+const CATEGORY_COLOR: Record<string, string> = {
+  dietary: "bg-red-50 text-red-700 border-red-200",
+  occasion: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  accessibility: "bg-purple-50 text-purple-700 border-purple-200",
+  preference: "bg-sky-50 text-sky-700 border-sky-200",
+  vip: "bg-amber-50 text-amber-700 border-amber-200",
+  operational: "bg-emerald-50 text-emerald-700 border-emerald-200",
+};
+
+function TagChip({ tag }: { tag: PipelineTag }) {
+  const colorClass = CATEGORY_COLOR[tag.category] ?? "bg-gray-50 text-gray-700 border-gray-200";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${colorClass}`}
+      title={tag.evidence_span ? `"${tag.evidence_span}" · ${tag.source}` : tag.source}
+    >
+      <span>{tag.provenance_icon}</span>
+      {tag.tag}
+    </span>
+  );
+}
+
+function PipelineTagsPanel({ result }: { result: AnalyzeTagsV2Response }) {
+  if (result.tags.length === 0) return null;
+  const urgencyClass = URGENCY_COLOR[result.urgency] ?? URGENCY_COLOR.low;
+  return (
+    <div className="card mt-4 animate-slide-up">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+          <Tag className="w-4 h-4 text-indigo-400" />
+          Smart Tags
+        </div>
+        <div className="flex items-center gap-2">
+          <span
+            className={`text-xs px-2 py-0.5 rounded-full border font-medium ${urgencyClass}`}
+          >
+            {result.urgency} urgency
+          </span>
+          {!result.llm_used && (
+            <span className="text-xs text-gray-400 italic">fallback mode</span>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {result.tags.map((t, i) => (
+          <TagChip key={i} tag={t} />
+        ))}
+      </div>
+      <p className="text-xs text-gray-400 mt-2">
+        📝 form&nbsp; 🤖 AI&nbsp; 📜 history&nbsp; ⚠️ fallback
+      </p>
+    </div>
+  );
+}
 
 const EMPTY_FORM: ReservationInput = {
   guest_name: "",
@@ -22,9 +89,13 @@ const EMPTY_FORM: ReservationInput = {
 export default function AnalyzePage() {
   const [form, setForm] = useState<ReservationInput>({ ...EMPTY_FORM });
   const [prediction, setPrediction] = useState<GuestPrediction | null>(null);
+  const [tagsV2, setTagsV2] = useState<AnalyzeTagsV2Response | null>(null);
   const [loading, setLoading] = useState(false);
   const [demos, setDemos] = useState<DemoScenario[]>([]);
   const [error, setError] = useState("");
+  const [quickTagsOpen, setQuickTagsOpen] = useState(false);
+  const [quickTags, setQuickTags] = useState<AnalyzeTagsV2Response | null>(null);
+  const [quickTagsLoading, setQuickTagsLoading] = useState(false);
 
   const update = (field: keyof ReservationInput, value: unknown) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -39,7 +110,28 @@ export default function AnalyzePage() {
   const applyDemo = (demo: DemoScenario) => {
     setForm({ ...EMPTY_FORM, ...demo.reservation });
     setPrediction(null);
+    setTagsV2(null);
+    setQuickTags(null);
     setError("");
+  };
+
+  const detectQuickTags = async () => {
+    if (!form.notes.trim()) return;
+    setQuickTagsLoading(true);
+    try {
+      const result = await analyzeTagsV2(form.notes, {
+        party_size: form.party_size,
+        children: form.children,
+        is_repeat_guest: form.is_repeat_guest,
+        previous_completions: form.previous_completions,
+      });
+      setQuickTags(result);
+      setQuickTagsOpen(true);
+    } catch {
+      // silently ignore — quick tags are optional
+    } finally {
+      setQuickTagsLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -51,8 +143,23 @@ export default function AnalyzePage() {
     setLoading(true);
     setError("");
     try {
-      const result = await predictGuestBehavior(form);
-      setPrediction(result);
+      const [predResult, tagsResult] = await Promise.allSettled([
+        predictGuestBehavior(form),
+        analyzeTagsV2(form.notes, {
+          party_size: form.party_size,
+          children: form.children,
+          is_repeat_guest: form.is_repeat_guest,
+          previous_completions: form.previous_completions,
+        }),
+      ]);
+      if (predResult.status === "fulfilled") {
+        setPrediction(predResult.value);
+      } else {
+        throw predResult.reason;
+      }
+      if (tagsResult.status === "fulfilled") {
+        setTagsV2(tagsResult.value);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Prediction failed");
     } finally {
@@ -245,16 +352,52 @@ export default function AnalyzePage() {
             </div>
 
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Notes
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700">
+                  Notes
+                </label>
+                <button
+                  type="button"
+                  onClick={detectQuickTags}
+                  disabled={!form.notes.trim() || quickTagsLoading}
+                  className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:text-gray-400"
+                >
+                  {quickTagsLoading ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Tag className="w-3 h-3" />
+                  )}
+                  Quick tags
+                  {quickTags && (
+                    quickTagsOpen
+                      ? <ChevronUp className="w-3 h-3" />
+                      : <ChevronDown className="w-3 h-3" />
+                  )}
+                </button>
+              </div>
               <textarea
                 value={form.notes}
-                onChange={(e) => update("notes", e.target.value)}
+                onChange={(e) => {
+                  update("notes", e.target.value);
+                  setQuickTags(null);
+                  setQuickTagsOpen(false);
+                }}
                 className="input-field"
                 rows={3}
                 placeholder="e.g. Birthday celebration. Severe nut allergy, carries epipen."
               />
+              {quickTags && quickTagsOpen && quickTags.tags.length > 0 && (
+                <div className="mt-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="flex flex-wrap gap-1">
+                    {quickTags.tags.map((t, i) => (
+                      <TagChip key={i} tag={t} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {quickTags && quickTagsOpen && quickTags.tags.length === 0 && (
+                <p className="mt-1 text-xs text-gray-400">No tags detected in notes.</p>
+              )}
             </div>
           </div>
 
@@ -281,7 +424,10 @@ export default function AnalyzePage() {
         {/* Result */}
         <div className="col-span-2">
           {prediction ? (
-            <GuestInsightCard prediction={prediction} />
+            <>
+              <GuestInsightCard prediction={prediction} />
+              {tagsV2 && <PipelineTagsPanel result={tagsV2} />}
+            </>
           ) : (
             <div className="card flex flex-col items-center justify-center text-center py-12 text-gray-400">
               <Search className="w-10 h-10 mb-3" />

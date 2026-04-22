@@ -58,6 +58,24 @@ export interface AnalyzeTagsResponse {
   engine: string;
 }
 
+// Phase 2: v2 pipeline tag types
+export interface PipelineTag {
+  tag: string;
+  category: string;
+  confidence: number;
+  source: "structured_form" | "history" | "llm" | "fallback_regex";
+  provenance_icon: string;
+  evidence_span: string;
+}
+
+export interface AnalyzeTagsV2Response {
+  tags: PipelineTag[];
+  urgency: "low" | "medium" | "high";
+  sentiment: Sentiment;
+  llm_used: boolean;
+  fallback_used: boolean;
+}
+
 export interface DemoScenario {
   name: string;
   reservation: Omit<ReservationInput, "reservation_date" | "reservation_time" | "table_number">;
