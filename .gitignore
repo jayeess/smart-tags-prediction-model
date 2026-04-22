@@ -15,3 +15,4 @@ tsconfig.tsbuildinfo
 ml_service/preprocessor.pkl
 ml_raw/
 .ipynb_checkpoints/
+*.db
