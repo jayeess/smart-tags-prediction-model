@@ -240,3 +240,60 @@ class TestAnalyzeTagsV2FormFields:
         assert call_kwargs.get("previous_completions") == 7
         assert call_kwargs.get("locale") == "ar"
         assert call_kwargs.get("tenant_id") == "t1"
+
+
+# ---------------------------------------------------------------------------
+# v1 /analyze-tags uses the same pipeline (use_llm=False)
+# ---------------------------------------------------------------------------
+
+class TestAnalyzeTagsV1UsesPipeline:
+    def test_v1_returns_200(self, client):
+        resp = client.post(
+            "/api/v1/reservations/analyze-tags",
+            json={"special_request_text": "birthday dinner", "dietary_preferences": "", "customer_name": "Test"},
+        )
+        assert resp.status_code == 200
+
+    def test_v1_birthday_tag_extracted(self, client):
+        resp = client.post(
+            "/api/v1/reservations/analyze-tags",
+            json={"special_request_text": "birthday dinner", "dietary_preferences": "", "customer_name": "Test"},
+        )
+        data = resp.json()
+        tag_names = [t["tag"].lower() for t in data["tags"]]
+        assert any("birthday" in n for n in tag_names)
+
+    def test_v1_response_shape_unchanged(self, client):
+        resp = client.post(
+            "/api/v1/reservations/analyze-tags",
+            json={"special_request_text": "anniversary", "dietary_preferences": "", "customer_name": "Alice"},
+        )
+        data = resp.json()
+        assert "customer_name" in data
+        assert "tags" in data
+        assert "sentiment" in data
+        assert "confidence" in data
+        assert "engine" in data
+        for tag in data["tags"]:
+            assert "tag" in tag
+            assert "category" in tag
+            assert "color" in tag
+
+    def test_v1_engine_name_updated(self, client):
+        resp = client.post(
+            "/api/v1/reservations/analyze-tags",
+            json={"special_request_text": "test", "dietary_preferences": "", "customer_name": "Test"},
+        )
+        assert resp.json()["engine"] == "fallback-regex-v1"
+
+    def test_v1_no_llm_call_made(self, client):
+        with patch("api.index.run_pipeline", wraps=__import__("ml_service.tag_pipeline", fromlist=["run_pipeline"]).run_pipeline) as mock_pipe:
+            client.post(
+                "/api/v1/reservations/analyze-tags",
+                json={"special_request_text": "birthday", "dietary_preferences": "", "customer_name": "Test"},
+            )
+        call_kwargs = mock_pipe.call_args
+        assert call_kwargs is not None
+        assert call_kwargs.kwargs.get("use_llm") is False or (
+            len(call_kwargs.args) >= 2 and call_kwargs.args[1] is False
+        )

@@ -173,35 +173,32 @@ class AnalyzeTagsV2Response(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Tag extraction (regex-based fallback engine)
+# v1 tag-color mapping — pipeline category → legacy color token
 # ---------------------------------------------------------------------------
-TAG_RULES = [
-    {"keywords": ["vip", "important", "high profile"], "tag": "VIP", "category": "Status", "color": "gold"},
-    {"keywords": ["celebrity", "famous", "celeb guest"], "tag": "Celeb", "category": "Status", "color": "gold"},
-    {"keywords": ["regular", "frequent", "loyal"], "tag": "Frequent Visitor", "category": "Status", "color": "gold"},
-    {"keywords": ["birthday", "bday"], "tag": "Birthday", "category": "Milestone", "color": "blue"},
-    {"keywords": ["anniversary", "wedding"], "tag": "Anniversary", "category": "Milestone", "color": "blue"},
-    {"keywords": ["promotion", "celebrating"], "tag": "Celebration", "category": "Milestone", "color": "blue"},
-    {"keywords": ["no show", "no-show", "didn't show"], "tag": "No Shows", "category": "Behavioral", "color": "gray"},
-    {"keywords": ["allergy", "allergic", "epipen", "anaphylaxis"], "tag": "Allergies", "category": "Health", "color": "red"},
-    {"keywords": ["dietary", "vegetarian", "vegan", "halal", "kosher", "gluten"], "tag": "Dietary Restrictions", "category": "Health", "color": "red"},
-    {"keywords": ["dairy-free", "lactose", "shellfish", "nut-free"], "tag": "Allergies", "category": "Health", "color": "red"},
-    {"keywords": ["wheelchair", "accessible", "disability"], "tag": "Accessibility", "category": "Special Needs", "color": "purple"},
-    {"keywords": ["high chair", "toddler", "baby", "infant"], "tag": "Family", "category": "Special Needs", "color": "purple"},
-]
+_PIPELINE_CATEGORY_COLOR: dict[str, str] = {
+    "dietary":       "red",
+    "occasion":      "blue",
+    "accessibility": "purple",
+    "preference":    "blue",
+    "vip":           "gold",
+    "operational":   "gray",
+}
 
 
-def extract_tags(text: str) -> list[TagResult]:
-    """Extract CRM tags from text using keyword matching."""
-    text_lower = text.lower()
-    found = []
-    seen_tags = set()
-    for rule in TAG_RULES:
-        if any(kw in text_lower for kw in rule["keywords"]):
-            if rule["tag"] not in seen_tags:
-                found.append(TagResult(tag=rule["tag"], category=rule["category"], color=rule["color"]))
-                seen_tags.add(rule["tag"])
-    return found
+def _pipeline_tags_to_v1(pipeline_tags) -> list[TagResult]:
+    """Convert PipelineTag list to the v1 TagResult shape (tag, category, color)."""
+    seen: set[str] = set()
+    out: list[TagResult] = []
+    for t in pipeline_tags:
+        key = t.tag.lower().strip()
+        if key not in seen:
+            seen.add(key)
+            out.append(TagResult(
+                tag=t.tag.title(),
+                category=t.category.title(),
+                color=_PIPELINE_CATEGORY_COLOR.get(t.category, "gray"),
+            ))
+    return out
 
 
 def extract_rule_tags(text: str) -> list[str]:
@@ -515,9 +512,14 @@ async def analyze_tags(
     request: AnalyzeTagsRequest,
     x_tenant_id: str = Header(default="default", alias="X-Tenant-ID"),
 ):
-    """Extract CRM smart tags and sentiment from reservation text."""
+    """Extract CRM smart tags and sentiment from reservation text.
+
+    Uses the shared fallback_regex layer from the v2 pipeline (use_llm=False),
+    so both v1 and v2 run the same regex engine.  Response shape is unchanged.
+    """
     combined_text = f"{request.special_request_text} {request.dietary_preferences}".strip()
-    tags = extract_tags(combined_text)
+    pipeline_result = run_pipeline(combined_text, use_llm=False)
+    tags = _pipeline_tags_to_v1(pipeline_result.tags)
 
     sentiment = analyze_sentiment(combined_text)
 
@@ -532,7 +534,7 @@ async def analyze_tags(
             emoji=sentiment.emoji,
         ),
         confidence=confidence,
-        engine="regex-v2",
+        engine="fallback-regex-v1",
     )
 
 

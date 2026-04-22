@@ -218,6 +218,7 @@ def run_pipeline(
     previous_completions: int = 0,
     tenant_id: str = "",
     phone_hash: Optional[str] = None,
+    use_llm: bool = True,
 ) -> TagPipelineResult:
     """Run the four-layer tag pipeline and return a merged TagPipelineResult.
 
@@ -230,6 +231,10 @@ def run_pipeline(
         previous_completions: Completed visit count (used for loyal-regular tag).
         tenant_id:           Tenant for history lookup.
         phone_hash:          Hashed phone for history lookup (None → skip).
+        use_llm:             When False, skip the LLM layer entirely and go
+                             straight to fallback_regex.  Use this for callers
+                             that want regex-only extraction without making an
+                             API call (e.g. the v1 analyze-tags endpoint).
 
     Returns:
         TagPipelineResult with merged tags, urgency, llm_sentiment, and
@@ -259,31 +264,34 @@ def run_pipeline(
     llm_result: Optional[LLMTagResult] = None
     llm_failed = False
 
-    try:
-        llm_result = extract_tags_llm(text=notes, locale=locale)
-        result.llm_used = True
-        result.urgency = llm_result.urgency
-        result.llm_sentiment = llm_result.sentiment
-        for t in llm_result.tags:
-            all_tags.append(
-                PipelineTag(
-                    tag=t.tag,
-                    category=t.category,
-                    confidence=t.confidence,
-                    source="llm",
-                    evidence_span=t.evidence_span,
+    if not use_llm:
+        llm_failed = True
+    else:
+        try:
+            llm_result = extract_tags_llm(text=notes, locale=locale)
+            result.llm_used = True
+            result.urgency = llm_result.urgency
+            result.llm_sentiment = llm_result.sentiment
+            for t in llm_result.tags:
+                all_tags.append(
+                    PipelineTag(
+                        tag=t.tag,
+                        category=t.category,
+                        confidence=t.confidence,
+                        source="llm",
+                        evidence_span=t.evidence_span,
+                    )
                 )
-            )
-    except LLMUnavailableError:
-        llm_failed = True
-        logger.info("tag_pipeline: LLM unavailable — checking LLM_TAGS_REQUIRED")
-        if os.environ.get("LLM_TAGS_REQUIRED", "").lower() == "true":
-            raise
-    except Exception as exc:
-        llm_failed = True
-        logger.warning("tag_pipeline: LLM call failed (%s: %s)", type(exc).__name__, exc)
-        if os.environ.get("LLM_TAGS_REQUIRED", "").lower() == "true":
-            raise LLMUnavailableError(f"LLM call failed: {exc}") from exc
+        except LLMUnavailableError:
+            llm_failed = True
+            logger.info("tag_pipeline: LLM unavailable — checking LLM_TAGS_REQUIRED")
+            if os.environ.get("LLM_TAGS_REQUIRED", "").lower() == "true":
+                raise
+        except Exception as exc:
+            llm_failed = True
+            logger.warning("tag_pipeline: LLM call failed (%s: %s)", type(exc).__name__, exc)
+            if os.environ.get("LLM_TAGS_REQUIRED", "").lower() == "true":
+                raise LLMUnavailableError(f"LLM call failed: {exc}") from exc
 
     # -- Layer 4: fallback regex --
     # Runs only when LLM failed or returned zero tags from the note.
